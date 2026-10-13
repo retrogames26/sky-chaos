@@ -314,7 +314,14 @@ export const FlightHUD: React.FC<FlightHUDProps> = ({
             </div>
           )}
 
-          <div className="mt-3 grid grid-cols-2 gap-1.5">
+          <div className="mt-3 grid grid-cols-3 gap-1.5">
+            <button
+              onClick={() => onOpenModal('MANIFEST')}
+              className="flex items-center justify-center gap-1 rounded bg-white/10 px-2 py-1.5 text-[11px] font-medium text-white transition-colors hover:bg-white/20 whitespace-nowrap"
+            >
+              <Users className="h-3 w-3 text-amber-400" />
+              Manifest
+            </button>
             <button
               onClick={() => onOpenModal('GALLEY')}
               className="flex items-center justify-center gap-1 rounded bg-white/10 px-2 py-1.5 text-[11px] font-medium text-white transition-colors hover:bg-white/20 whitespace-nowrap"
@@ -327,7 +334,7 @@ export const FlightHUD: React.FC<FlightHUDProps> = ({
               className="flex items-center justify-center gap-1 rounded bg-amber-500/20 border border-amber-500/40 px-2 py-1.5 text-[11px] font-medium text-amber-300 transition-colors hover:bg-amber-500/30 whitespace-nowrap"
             >
               <DoorClosed className="h-3 w-3" />
-              {telemetry.cabinDoorClosed ? 'Toggle Door' : 'Seal & Start'}
+              {telemetry.cabinDoorClosed ? 'Door Armed' : 'Seal & Start'}
             </button>
           </div>
         </div>

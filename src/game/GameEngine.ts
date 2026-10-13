@@ -431,16 +431,32 @@ export class GameEngine {
     const consider = (
       targetPos: THREE.Vector3,
       maxDist: number,
-      item: Omit<InteractionTarget, 'distance'>
+      item: Omit<InteractionTarget, 'distance'>,
+      isPassenger: boolean = false
     ) => {
       const toTarget = new THREE.Vector3().subVectors(targetPos, eyeLocal);
       const dist = toTarget.length();
       if (dist > maxDist) return;
+
       const dir = toTarget.clone().normalize();
       const dot = lookDir.dot(dir);
-      if (dot < 0.25 && dist > 1.4) return;
-      const score = dist - dot * 1.6;
-      candidates.push({ ...item, distance: dist, score });
+      if (dot < 0.15 && dist > 1.2) return;
+
+      if (isPassenger) {
+        // High-precision reticle targeting for passengers:
+        // Calculates perpendicular distance from the player's crosshair ray to the passenger center.
+        // Even when an aisle passenger is radially closer, aiming directly at the window seat yields
+        // a near-zero perpDist, allowing the window passenger to be cleanly selected.
+        const proj = toTarget.dot(lookDir);
+        if (proj < 0.2) return;
+        const perpDist = toTarget.clone().sub(lookDir.clone().multiplyScalar(proj)).length();
+        // Strongly weight reticle aim alignment over raw distance
+        const score = perpDist * 4.5 + proj * 0.25;
+        candidates.push({ ...item, distance: dist, score });
+      } else {
+        const score = dist - dot * 1.6;
+        candidates.push({ ...item, distance: dist, score });
+      }
     };
 
     if (!this.player.insideCabin) {
@@ -603,16 +619,17 @@ export class GameEngine {
 
     for (const pax of this.passengers) {
       if (!pax.boarded) continue;
-      const paxPos = new THREE.Vector3(pax.position.x, pax.position.y + 0.9, pax.position.z);
+      // Head/chest center of seated passenger
+      const paxPos = new THREE.Vector3(pax.position.x, pax.position.y + 0.95, pax.position.z);
 
       let prompt = `Press E to check ${pax.name} (Seat ${pax.seat})`;
       let subPrompt = `Order: ${pax.mealOrder} · Mood: ${Math.round(pax.happiness)}%`;
 
       if (pax.isPanicking || pax.needsMedicalAid) {
-        prompt = `Press E to calm & assist panicking passenger ${pax.name}`;
+        prompt = `Press E to calm & assist panicking passenger ${pax.name} (Seat ${pax.seat})`;
         subPrompt = 'Restores passenger calm and cabin safety';
       } else if (this.heldObject?.kind === 'MEAL' && !pax.mealServed) {
-        prompt = `Press E to serve ${this.heldObject.mealType} to ${pax.name} (Wants: ${pax.mealOrder})`;
+        prompt = `Press E to serve ${this.heldObject.mealType} to ${pax.name} (Seat ${pax.seat} · Wants: ${pax.mealOrder})`;
         subPrompt =
           this.heldObject.mealType === pax.mealOrder
             ? 'Exact order match! (+Bonus Satisfaction)'
@@ -625,13 +642,18 @@ export class GameEngine {
         subPrompt = 'Required for pre-flight safety check';
       }
 
-      consider(paxPos, 2.85, {
-        id: pax.id,
-        type: 'PASSENGER',
-        refId: pax.id,
-        prompt,
-        subPrompt,
-      });
+      consider(
+        paxPos,
+        3.5,
+        {
+          id: pax.id,
+          type: 'PASSENGER',
+          refId: pax.id,
+          prompt,
+          subPrompt,
+        },
+        true
+      );
     }
 
     if (candidates.length === 0) return null;
@@ -1614,6 +1636,28 @@ export class GameEngine {
             enginesRunning: this.telemetry.enginesRunning,
             phase: this.flightPhase,
           }
+        );
+      } else if (this.controlMode === 'DRIVING_TUG') {
+        multiplayerClient.sendVehicleSync(
+          'tug',
+          {
+            x: Number(this.world.tugGroup.position.x.toFixed(2)),
+            y: Number(this.world.tugGroup.position.y.toFixed(2)),
+            z: Number(this.world.tugGroup.position.z.toFixed(2)),
+          },
+          Number(this.tugState.yaw.toFixed(2)),
+          Number(this.tugState.speed.toFixed(2))
+        );
+      } else if (this.controlMode === 'DRIVING_FUEL_TRUCK') {
+        multiplayerClient.sendVehicleSync(
+          'fuel_truck',
+          {
+            x: Number(this.world.fuelTruckGroup.position.x.toFixed(2)),
+            y: Number(this.world.fuelTruckGroup.position.y.toFixed(2)),
+            z: Number(this.world.fuelTruckGroup.position.z.toFixed(2)),
+          },
+          Number(this.fuelTruckState.yaw.toFixed(2)),
+          Number(this.fuelTruckState.speed.toFixed(2))
         );
       }
     }

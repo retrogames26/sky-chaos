@@ -77,7 +77,7 @@ export class PhysicsWorld {
         }
       }
 
-      const seatRowsZ = [-6.0, -3.6, -1.2, 1.2];
+      const seatRowsZ = [-6.0, -3.6, -1.2, 1.2, 3.6, 6.0];
       for (const rz of seatRowsZ) {
         if (Math.abs(nextZ - rz) < 0.46 && Math.abs(nextX) > 0.46) {
           if (Math.abs(prevX) <= 0.46) {

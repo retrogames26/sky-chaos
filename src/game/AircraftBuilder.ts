@@ -190,58 +190,160 @@ export function buildPassengerAircraft(): AircraftParts {
   leftStripe.position.set(-1.9, 2.45, 3.65);
   root.add(leftStripe);
 
-  const cockpitBelly = new THREE.Mesh(
-    new THREE.CylinderGeometry(1.15, 1.92, 5.2, 24, 1, false, 0, Math.PI * 2),
-    fuselageWhite
-  );
-  cockpitBelly.rotation.x = Math.PI / 2;
-  cockpitBelly.scale.set(1, 0.55, 1);
-  cockpitBelly.position.set(0, 1.65, -15.6);
-  cockpitBelly.castShadow = true;
-  root.add(cockpitBelly);
+  // Smooth Parametric Airliner Nose Construction
+  // Seamlessly transitions from main fuselage cylinder (z = -13.0, y = 2.65, r = 1.95) to radome tip (z = -19.4)
+  const createNoseLoftGeometry = (
+    tMin: number,
+    tMax: number,
+    radialSegs: number = 36,
+    longitudinalSegs: number = 16
+  ): THREE.BufferGeometry => {
+    const geom = new THREE.BufferGeometry();
+    const positions: number[] = [];
+    const uvs: number[] = [];
+    const indices: number[] = [];
+    const totalLength = 6.4; // from z = -13.0 to z = -19.4
 
-  const noseCone = new THREE.Mesh(
-    new THREE.SphereGeometry(1.15, 24, 16),
-    liveryNavy
-  );
-  noseCone.scale.set(0.95, 0.75, 1.6);
-  noseCone.position.set(0, 1.85, -18.1);
-  noseCone.castShadow = true;
-  root.add(noseCone);
+    for (let j = 0; j <= longitudinalSegs; j++) {
+      const frac = j / longitudinalSegs;
+      const t = tMin + frac * (tMax - tMin);
+      const z = -13.0 - t * totalLength;
+      const centerY = 2.65 - 0.45 * Math.pow(t, 1.4);
+      const r = 1.95 * Math.sqrt(Math.max(0, 1.0 - Math.pow(t, 1.85)));
 
-  const cockpitRoof = new THREE.Mesh(new THREE.BoxGeometry(2.6, 0.18, 4.4), fuselageWhite);
-  cockpitRoof.position.set(0, 3.92, -15.1);
-  cockpitRoof.rotation.x = 0.08;
-  root.add(cockpitRoof);
+      for (let i = 0; i <= radialSegs; i++) {
+        const u = i / radialSegs;
+        const angle = u * Math.PI * 2;
+        const x = r * Math.sin(angle);
+        const y = centerY + r * Math.cos(angle);
 
+        positions.push(x, y, z);
+        uvs.push(u, t);
+      }
+    }
+
+    for (let j = 0; j < longitudinalSegs; j++) {
+      for (let i = 0; i < radialSegs; i++) {
+        const a = j * (radialSegs + 1) + i;
+        const b = (j + 1) * (radialSegs + 1) + i;
+        const c = (j + 1) * (radialSegs + 1) + (i + 1);
+        const d = j * (radialSegs + 1) + (i + 1);
+
+        indices.push(a, b, d);
+        indices.push(b, c, d);
+      }
+    }
+
+    geom.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    geom.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+    geom.setIndex(indices);
+    geom.computeVertexNormals();
+    return geom;
+  };
+
+  // 1. Forward fuselage section (t: 0.0 to 0.68, z: -13.0 to -17.35)
+  const fwdFuselageGeo = createNoseLoftGeometry(0.0, 0.68, 36, 14);
+  const fwdFuselageMesh = new THREE.Mesh(fwdFuselageGeo, fuselageWhite);
+  fwdFuselageMesh.castShadow = true;
+  fwdFuselageMesh.receiveShadow = true;
+  root.add(fwdFuselageMesh);
+
+  // 2. Weather Radar Radome Cone (t: 0.68 to 1.0, z: -17.35 to -19.4)
+  const radomeGeo = createNoseLoftGeometry(0.68, 1.0, 36, 12);
+  const radomeMesh = new THREE.Mesh(radomeGeo, liveryNavy);
+  radomeMesh.castShadow = true;
+  radomeMesh.receiveShadow = true;
+  root.add(radomeMesh);
+
+  // 3. Nose Livery Speed Stripe (t: 0.05 to 0.70)
+  const noseStripeGeo = new THREE.BufferGeometry();
+  const stripePositions: number[] = [];
+  const stripeIndices: number[] = [];
+  for (let j = 0; j <= 12; j++) {
+    const t = 0.05 + (j / 12) * 0.62;
+    const z = -13.0 - t * 6.4;
+    const centerY = 2.65 - 0.45 * Math.pow(t, 1.4);
+    const r = 1.95 * Math.sqrt(Math.max(0, 1.0 - Math.pow(t, 1.85)));
+    for (const side of [-1, 1]) {
+      const angle = (side * Math.PI) / 2 + 0.05;
+      const x = (r + 0.015) * Math.sin(angle);
+      const y = centerY + (r + 0.015) * Math.cos(angle);
+      stripePositions.push(x, y - 0.1, z);
+      stripePositions.push(x, y + 0.1, z);
+    }
+  }
+  for (let j = 0; j < 12; j++) {
+    for (let s = 0; s < 2; s++) {
+      const base = j * 4 + s * 2;
+      const next = (j + 1) * 4 + s * 2;
+      stripeIndices.push(base, next, base + 1);
+      stripeIndices.push(next, next + 1, base + 1);
+    }
+  }
+  noseStripeGeo.setAttribute('position', new THREE.Float32BufferAttribute(stripePositions, 3));
+  noseStripeGeo.setIndex(stripeIndices);
+  noseStripeGeo.computeVertexNormals();
+  const noseStripeMesh = new THREE.Mesh(noseStripeGeo, liveryAmber);
+  root.add(noseStripeMesh);
+
+  // 4. Cockpit Windshield Assembly (Contoured to upper nose surface)
   const windshieldGroup = new THREE.Group();
-  windshieldGroup.position.set(0, 3.1, -16.8);
+  windshieldGroup.position.set(0, 2.55, -15.8);
 
-  const centerPost = new THREE.Mesh(new THREE.BoxGeometry(0.1, 1.15, 0.12), liveryNavy);
-  centerPost.rotation.x = -0.52;
+  // Center Windshield Post
+  const centerPost = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.95, 0.08), liveryNavy);
+  centerPost.position.set(0, 0.76, -0.42);
+  centerPost.rotation.x = -0.62;
   windshieldGroup.add(centerPost);
 
-  const frontGlassL = new THREE.Mesh(new THREE.PlaneGeometry(1.15, 1.08), cockpitGlass);
-  frontGlassL.position.set(-0.6, 0, -0.05);
-  frontGlassL.rotation.x = -0.52;
+  // Brow Arch (Glareshield top rim)
+  const browArch = new THREE.Mesh(new THREE.BoxGeometry(2.35, 0.08, 0.12), liveryNavy);
+  browArch.position.set(0, 1.15, -0.15);
+  browArch.rotation.x = 0.12;
+  windshieldGroup.add(browArch);
+
+  // Windshield Base Frame
+  const baseFrame = new THREE.Mesh(new THREE.BoxGeometry(2.45, 0.08, 0.15), darkMetal);
+  baseFrame.position.set(0, 0.36, -0.68);
+  baseFrame.rotation.x = -0.58;
+  windshieldGroup.add(baseFrame);
+
+  // Pilot & Copilot Front Windscreen Panes
+  const frontGlassGeo = new THREE.PlaneGeometry(0.98, 0.92);
+  const frontGlassL = new THREE.Mesh(frontGlassGeo, cockpitGlass);
+  frontGlassL.position.set(-0.55, 0.74, -0.42);
+  frontGlassL.rotation.x = -0.62;
   frontGlassL.rotation.y = 0.18;
   windshieldGroup.add(frontGlassL);
 
-  const frontGlassR = new THREE.Mesh(new THREE.PlaneGeometry(1.15, 1.08), cockpitGlass);
-  frontGlassR.position.set(0.6, 0, -0.05);
-  frontGlassR.rotation.x = -0.52;
+  const frontGlassR = new THREE.Mesh(frontGlassGeo, cockpitGlass);
+  frontGlassR.position.set(0.55, 0.74, -0.42);
+  frontGlassR.rotation.x = -0.62;
   frontGlassR.rotation.y = -0.18;
   windshieldGroup.add(frontGlassR);
 
-  const sideGlassL = new THREE.Mesh(new THREE.PlaneGeometry(2.4, 0.95), cockpitGlass);
-  sideGlassL.position.set(-1.45, 0.05, 1.25);
-  sideGlassL.rotation.y = Math.PI / 2 - 0.15;
+  // Left & Right Side Sliding Windows
+  const sideGlassGeo = new THREE.PlaneGeometry(1.45, 0.85);
+  const sideGlassL = new THREE.Mesh(sideGlassGeo, cockpitGlass);
+  sideGlassL.position.set(-1.42, 0.78, 0.42);
+  sideGlassL.rotation.y = Math.PI / 2 - 0.22;
+  sideGlassL.rotation.z = -0.08;
   windshieldGroup.add(sideGlassL);
 
-  const sideGlassR = new THREE.Mesh(new THREE.PlaneGeometry(2.4, 0.95), cockpitGlass);
-  sideGlassR.position.set(1.45, 0.05, 1.25);
-  sideGlassR.rotation.y = -Math.PI / 2 + 0.15;
+  const sideGlassR = new THREE.Mesh(sideGlassGeo, cockpitGlass);
+  sideGlassR.position.set(1.42, 0.78, 0.42);
+  sideGlassR.rotation.y = -Math.PI / 2 + 0.22;
+  sideGlassR.rotation.z = 0.08;
   windshieldGroup.add(sideGlassR);
+
+  // Windshield Wipers
+  for (const side of [-0.48, 0.48]) {
+    const wiperArm = new THREE.Mesh(new THREE.BoxGeometry(0.025, 0.55, 0.02), darkMetal);
+    wiperArm.position.set(side, 0.65, -0.48);
+    wiperArm.rotation.x = -0.62;
+    wiperArm.rotation.z = side > 0 ? 0.35 : -0.35;
+    windshieldGroup.add(wiperArm);
+  }
 
   root.add(windshieldGroup);
 
@@ -663,7 +765,7 @@ export function buildPassengerAircraft(): AircraftParts {
   root.add(galleySmokeParticles);
 
   const seatColsX = [-1.22, -0.78, 0.78, 1.22];
-  for (let row = 1; row <= 4; row++) {
+  for (let row = 1; row <= 6; row++) {
     const zPos = -6.0 + (row - 1) * 2.4;
     for (const sx of seatColsX) {
       const seatGrp = new THREE.Group();

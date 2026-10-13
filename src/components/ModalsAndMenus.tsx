@@ -373,24 +373,56 @@ export const ModalsAndMenus: React.FC<ModalsProps> = ({
           </div>
 
           <div className="mt-5">
-            <h3 className="font-display text-sm font-bold text-white">
-              Passenger Manifest ({passengers.filter((p) => p.boarded).length} Boarded)
-            </h3>
-            <div className="mt-2.5 grid grid-cols-2 gap-2 text-xs">
-              {passengers.map((pax) => (
-                <div
-                  key={pax.id}
-                  className="flex items-center justify-between rounded-lg border border-white/5 bg-slate-950/70 px-3 py-2"
-                >
-                  <div className="flex items-center gap-2">
-                    <span className="font-mono font-bold text-amber-400">{pax.seat}</span>
-                    <span className="font-medium text-white">{pax.name}</span>
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/10 pb-2">
+              <h3 className="font-display text-sm font-bold text-white">
+                Passenger Manifest
+              </h3>
+              <div className="flex items-center gap-3 font-mono text-xs tabular-nums">
+                <span className="rounded bg-white/10 px-2 py-0.5 text-slate-300">
+                  Passengers detected: <strong className="text-white">{passengers.filter((p) => p.boarded).length} / {passengers.length}</strong>
+                </span>
+                <span className="rounded bg-amber-500/20 px-2 py-0.5 text-amber-300">
+                  Boarding passes checked: <strong className="text-white">{passengers.filter((p) => p.ticketChecked).length} / {passengers.length}</strong>
+                </span>
+              </div>
+            </div>
+
+            <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+              {passengers.map((pax) => {
+                const statusColor = !pax.ticketChecked
+                  ? 'text-amber-400 bg-amber-950/40 border-amber-500/30'
+                  : pax.ticketDecision === 'APPROVED'
+                  ? 'text-emerald-400 bg-emerald-950/40 border-emerald-500/30'
+                  : 'text-red-400 bg-red-950/40 border-red-500/30';
+
+                const statusLabel = !pax.ticketChecked
+                  ? 'UNCHECKED'
+                  : pax.ticketDecision === 'APPROVED'
+                  ? 'APPROVED'
+                  : 'DENIED';
+
+                return (
+                  <div
+                    key={pax.id}
+                    className="flex items-center justify-between rounded-lg border border-white/5 bg-slate-950/70 px-3 py-2"
+                  >
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono font-bold text-amber-400">{pax.seat}</span>
+                      <span className="font-medium text-white">{pax.name}</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono text-[11px] text-slate-400">
+                        {pax.mealOrder}
+                      </span>
+                      <span
+                        className={`rounded border px-1.5 py-0.5 font-mono text-[10px] font-semibold ${statusColor}`}
+                      >
+                        {statusLabel}
+                      </span>
+                    </div>
                   </div>
-                  <div className="font-mono text-[11px] text-slate-400">
-                    Order: <span className="text-white">{pax.mealOrder}</span>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         </div>

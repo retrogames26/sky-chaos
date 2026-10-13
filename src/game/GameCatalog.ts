@@ -168,6 +168,22 @@ const PASSENGER_NAMES = [
   'Fiona Gallagher',
   'Gordon Ramsay-ish',
   'Hannah Abbott',
+  'Isaac Newton-Brown',
+  'Jasmine Al-Mansoor',
+  'Kevin McFlyer',
+  'Luna Love-Glider',
+  'Marcus Aurelius-Jones',
+  'Nora Valkyrie-Smith',
+  'Oliver Twist-Turn',
+  'Penelope Cruz-Air',
+  'Quentin Tarantino-esque',
+  'Rachel Green-Jet',
+  'Samwise Gamgee-sky',
+  'Tara Strong-Wind',
+  'Ulysses S. Pilot',
+  'Victoria Beckham-Wing',
+  'Walter White-Cloud',
+  'Xena Warrior-Pax',
 ];
 
 const OUTFIT_COLORS = [
@@ -179,6 +195,10 @@ const OUTFIT_COLORS = [
   0x06b6d4, // cyan
   0xef4444, // red
   0x84cc16, // lime
+  0x6366f1, // indigo
+  0xf43f5e, // rose
+  0x14b8a6, // teal
+  0xeab308, // yellow
 ];
 
 const MEAL_TYPES: MealType[] = ['Chicken', 'Pasta', 'Veggie', 'Coffee'];
@@ -189,42 +209,51 @@ export function createInitialScenario(route: FlightRoute): {
   cargo: CargoCrate[];
   messes: CabinMess[];
 } {
-  const invalidIndices = new Set<number>([2, 6]);
+  // Invalid boarding passes on realistic distribution (e.g. index 2, 7, 13, 18, 22)
+  const invalidMap: Record<number, string> = {
+    2: 'Boarding pass written in purple crayon for Flight ZX-999 (Expired 1998)',
+    7: 'Destination reads "ATLANTIS UNDERWATER DOME" (Incorrect destination)',
+    13: 'Boarding pass issued by "BOGUS AIRWAYS" with no flight security stamp',
+    18: 'Seat number scribbled as "BAGGAGE COMPARTMENT #4" (Invalid seating)',
+    22: 'Ticket timestamp set in year 2049 (Time traveler boarding anomaly)',
+  };
+
   const seatCols = [
-    { col: 0, letter: 'A', x: -1.22 },
-    { col: 1, letter: 'B', x: -0.78 },
-    { col: 2, letter: 'C', x: 0.78 },
-    { col: 3, letter: 'D', x: 1.22 },
+    { col: 0, letter: 'A', x: -1.22 }, // Window Left
+    { col: 1, letter: 'B', x: -0.78 }, // Aisle Left
+    { col: 2, letter: 'C', x: 0.78 },  // Aisle Right
+    { col: 3, letter: 'D', x: 1.22 },  // Window Right
   ];
 
+  // 6 rows (1 to 6), 4 seats per row (A, B, C, D) = 24 seats total
   const passengers: PassengerData[] = PASSENGER_NAMES.map((name, idx) => {
-    const row = Math.floor(idx / 2) + 1;
-    const colObj = seatCols[idx % 4];
+    const row = Math.floor(idx / 4) + 1; // Row 1 to 6
+    const colIdx = idx % 4; // 0: A, 1: B, 2: C, 3: D
+    const colObj = seatCols[colIdx];
+    // z positions for 6 rows spaced by 2.4m: row 1 at -6.0, row 6 at 6.0
     const zPos = -6.0 + (row - 1) * 2.4;
-    const isValid = !invalidIndices.has(idx);
-
-    const invalidReasons = [
-      'Ticket destination reads "ATLANTIS UNDERWATER DOME" (Wrong Flight)',
-      'Boarding pass written in purple crayon for Flight ZX-999 (Expired 1998)',
-    ];
+    const isInvalid = idx in invalidMap;
+    const isValid = !isInvalid;
 
     return {
       id: `pax_${idx + 1}`,
       name,
       seat: `${row}${colObj.letter}`,
       seatRow: row,
-      seatCol: colObj.col,
-      ticketDestination: isValid ? `${route.destinationName} (${route.destinationCode})` : 'Atlantis Intl (KATL)',
+      seatCol: colIdx,
+      ticketDestination: isValid
+        ? `${route.destinationName} (${route.destinationCode})`
+        : 'Atlantis Intl (KATL)',
       isTicketValid: isValid,
-      invalidityReason: isValid ? undefined : invalidReasons[idx === 2 ? 0 : 1],
+      invalidityReason: isInvalid ? invalidMap[idx] : undefined,
       ticketChecked: false,
       ticketDecision: null,
       boarded: true,
       seatbeltFastened: idx % 3 === 0,
-      hunger: 55 + (idx * 7) % 35,
+      hunger: 45 + (idx * 7) % 45,
       mealOrder: MEAL_TYPES[idx % MEAL_TYPES.length],
       mealServed: false,
-      happiness: 82,
+      happiness: 85,
       isPanicking: false,
       needsMedicalAid: false,
       outfitColor: OUTFIT_COLORS[idx % OUTFIT_COLORS.length],
