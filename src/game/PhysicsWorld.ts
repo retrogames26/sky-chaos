@@ -58,6 +58,13 @@ export class PhysicsWorld {
 
     const wasInside = prevX > -1.78 && prevX < 1.78 && prevZ > -16.8 && prevZ < 15.6 && player.localPos.y >= 1.35;
 
+    // Space is the jump input while walking outdoors. The old implementation
+    // accepted this input but never used it, making the advertised jump inert.
+    if (input.jump && player.grounded && !wasInside) {
+      player.velocity.y = 5.8;
+      player.grounded = false;
+    }
+
     if (wasInside) {
       const maxX = nextZ < -12.6 ? 1.15 : 1.52;
       if (nextX > maxX) nextX = maxX;
@@ -111,6 +118,7 @@ export class PhysicsWorld {
         player.localPos.y = progress * 1.65;
         player.localPos.x = nextX;
         player.localPos.z = nextZ;
+        player.velocity.y = 0;
         player.grounded = true;
         player.insideCabin = nextX > -1.8;
       } else {
@@ -125,8 +133,13 @@ export class PhysicsWorld {
         player.localPos.x = nextX;
         player.localPos.z = nextZ;
 
-        if (player.localPos.y > 0) {
-          player.localPos.y = Math.max(0, player.localPos.y - 6.0 * clampedDt);
+        if (player.localPos.y > 0 || player.velocity.y > 0) {
+          player.velocity.y -= 16.0 * clampedDt;
+          player.localPos.y = Math.max(0, player.localPos.y + player.velocity.y * clampedDt);
+          if (player.localPos.y === 0) player.velocity.y = 0;
+        } else {
+          player.localPos.y = 0;
+          player.velocity.y = 0;
         }
         player.grounded = player.localPos.y <= 0.01;
         player.insideCabin = false;
