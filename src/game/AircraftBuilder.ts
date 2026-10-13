@@ -598,11 +598,18 @@ export function buildPassengerAircraft(): AircraftParts {
   root.add(cabinDoorPivot);
 
   const cargoDoorPivot = new THREE.Group();
-  cargoDoorPivot.position.set(-1.84, 1.9, 12.8);
-  const cargoDoorMesh = new THREE.Mesh(new THREE.BoxGeometry(0.14, 1.1, 1.8), liveryAmber);
-  cargoDoorMesh.position.set(0, 0, 0.9);
+  cargoDoorPivot.position.set(-1.93, 1.9, 12.8);
+  // Contrasting inset and panel make the rear hold door readable from the apron.
+  const cargoDoorInset = new THREE.Mesh(new THREE.BoxGeometry(0.06, 1.18, 1.9), darkMetal);
+  cargoDoorInset.position.set(0, 0, 0.92);
+  cargoDoorPivot.add(cargoDoorInset);
+  const cargoDoorMesh = new THREE.Mesh(new THREE.BoxGeometry(0.16, 1.08, 1.78), liveryAmber);
+  cargoDoorMesh.position.set(0.07, 0, 0.92);
   cargoDoorPivot.add(cargoDoorMesh);
-  cargoDoorPivot.rotation.z = -1.2;
+  const cargoDoorHandle = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.16, 0.12), chromeMat);
+  cargoDoorHandle.position.set(0.17, -0.18, 0.25);
+  cargoDoorPivot.add(cargoDoorHandle);
+  cargoDoorPivot.rotation.y = -1.2;
   root.add(cargoDoorPivot);
 
   const boardingStairs = new THREE.Group();
