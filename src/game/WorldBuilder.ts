@@ -8,6 +8,7 @@ export interface WorldObjects {
   tugGroup: THREE.Group;
   fuelTruckGroup: THREE.Group;
   luggageCartGroup: THREE.Group;
+  baggageConveyorGroup: THREE.Group;
 }
 
 export function buildAirportAndFlightWorld(): WorldObjects {
@@ -377,6 +378,44 @@ export function buildAirportAndFlightWorld(): WorldObjects {
     worldGroup.add(peak);
   });
 
+  // Functional-looking belt-loader assembly beside the baggage cart staging area.
+  // The belt is a separate world object so the game can animate/position it independently.
+  const baggageConveyorGroup = new THREE.Group();
+  baggageConveyorGroup.name = 'BaggageConveyor';
+  baggageConveyorGroup.position.set(12, 0, -18);
+  const beltFrameMat = new THREE.MeshStandardMaterial({ color: 0x475569, metalness: 0.65, roughness: 0.42 });
+  const beltMat = new THREE.MeshStandardMaterial({ color: 0x1f2937, metalness: 0.15, roughness: 0.8 });
+  const railMat = new THREE.MeshStandardMaterial({ color: 0xf59e0b, metalness: 0.25, roughness: 0.5 });
+  const beltFrame = new THREE.Mesh(new THREE.BoxGeometry(2.5, 0.32, 7.2), beltFrameMat);
+  beltFrame.position.set(0, 1.5, 0);
+  beltFrame.rotation.x = -0.24;
+  baggageConveyorGroup.add(beltFrame);
+  const movingBelt = new THREE.Mesh(new THREE.BoxGeometry(2.12, 0.08, 6.85), beltMat);
+  movingBelt.name = 'ConveyorBeltSurface';
+  movingBelt.position.set(0, 1.72, 0);
+  movingBelt.rotation.x = -0.24;
+  baggageConveyorGroup.add(movingBelt);
+  for (const side of [-1, 1]) {
+    const rail = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.22, 7.0), railMat);
+    rail.position.set(side * 1.12, 1.86, 0);
+    rail.rotation.x = -0.24;
+    baggageConveyorGroup.add(rail);
+  }
+  const lowerWheel = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.42, 2.7, 12), beltFrameMat);
+  lowerWheel.rotation.z = Math.PI / 2;
+  lowerWheel.position.set(0, 0.48, 3.0);
+  baggageConveyorGroup.add(lowerWheel);
+  const upperRoller = lowerWheel.clone();
+  upperRoller.position.set(0, 2.45, -3.0);
+  baggageConveyorGroup.add(upperRoller);
+  for (const x of [-0.85, 0.85]) {
+    const wheel = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.34, 0.18, 12), new THREE.MeshStandardMaterial({ color: 0x111827 }));
+    wheel.rotation.z = Math.PI / 2;
+    wheel.position.set(x, 0.34, 1.8);
+    baggageConveyorGroup.add(wheel);
+  }
+  worldGroup.add(baggageConveyorGroup);
+
   return {
     worldGroup,
     radarDish,
@@ -385,5 +424,6 @@ export function buildAirportAndFlightWorld(): WorldObjects {
     tugGroup: tug,
     fuelTruckGroup: fuelTruck,
     luggageCartGroup: luggageCart,
+    baggageConveyorGroup,
   };
 }
