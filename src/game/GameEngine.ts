@@ -2014,6 +2014,7 @@ export class GameEngine {
     // Browsers may not deliver keyup when a tab loses focus. Clear held input
     // so aircraft and ground vehicles never keep accelerating off-screen.
     window.addEventListener('blur', this.handleWindowBlur);
+    document.addEventListener('visibilitychange', this.handleVisibilityChange);
     window.addEventListener('resize', this.handleResize);
     document.addEventListener('pointerlockchange', this.handlePointerLockChange);
     this.renderer.domElement.addEventListener('mousedown', this.handleMouseDown);
@@ -2121,6 +2122,10 @@ export class GameEngine {
     this.keys.clear();
     this.isDraggingLook = false;
     this.releasePointerLock();
+  };
+
+  private handleVisibilityChange = () => {
+    if (document.hidden) this.handleWindowBlur();
   };
 
   private handleKeyUp = (e: KeyboardEvent) => {
@@ -2371,6 +2376,7 @@ export class GameEngine {
     window.removeEventListener('keydown', this.handleKeyDown);
     window.removeEventListener('keyup', this.handleKeyUp);
     window.removeEventListener('blur', this.handleWindowBlur);
+    document.removeEventListener('visibilitychange', this.handleVisibilityChange);
     window.removeEventListener('resize', this.handleResize);
     document.removeEventListener('pointerlockchange', this.handlePointerLockChange);
     this.renderer.domElement.removeEventListener('mousedown', this.handleMouseDown);
