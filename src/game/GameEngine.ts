@@ -264,6 +264,24 @@ export class GameEngine {
     this.telemetry = this.createInitialTelemetry();
     this.flightEndedTriggered = false;
     this.heldObject = null;
+    this.keys.clear();
+    this.player.velocity.set(0, 0, 0);
+    this.tugState.position.set(-5.4, 0, -7.2);
+    this.tugState.yaw = 0;
+    this.tugState.speed = 0;
+    this.tugState.steerAngle = 0;
+    this.fuelTruckState.position.set(11.5, 0, -6.5);
+    this.fuelTruckState.yaw = 0;
+    this.fuelTruckState.speed = 0;
+    this.fuelTruckState.steerAngle = 0;
+    this.cartAttachedToTug = false;
+    this.world.tugGroup.position.copy(this.tugState.position);
+    this.world.tugGroup.rotation.y = this.tugState.yaw;
+    this.world.fuelTruckGroup.position.copy(this.fuelTruckState.position);
+    this.world.fuelTruckGroup.rotation.y = this.fuelTruckState.yaw;
+    this.incidentCooldown = 14;
+    this.turbulenceTimer = 0;
+    this.heldObject = null;
     this.updateHeldItemVisual();
 
     this.aircraft.root.position.set(0, 0, 0);
