@@ -34,19 +34,37 @@ const DEFAULT_PROFILE: PlayerProfile = {
 class ProgressionService {
   private currentUser: User | null = null;
   private isConnected = false;
+  private authReady: Promise<void>;
 
   constructor() {
-    this.init();
-  }
-
-  private async init() {
-    this.isConnected = await testFirestoreConnection();
-    onAuthStateChanged(auth, async (user) => {
-      this.currentUser = user;
-      if (user) {
-        await this.syncProfileForUser(user);
-      }
+    // Register auth immediately. Waiting for a Firestore network probe first
+    // could leave the app loading a guest profile before Firebase restores the
+    // signed-in session, then overwrite that player's cloud career.
+    this.authReady = new Promise<void>((resolve) => {
+      let firstAuthState = true;
+      onAuthStateChanged(auth, async (user) => {
+        this.currentUser = user;
+        try {
+          if (user) await this.syncProfileForUser(user);
+        } catch (error) {
+          console.error('Could not restore pilot profile from Firestore:', error);
+        } finally {
+          if (firstAuthState) {
+            firstAuthState = false;
+            resolve();
+          }
+        }
+      });
     });
+
+    // Status is informational; it must not block authentication or profile loading.
+    void testFirestoreConnection()
+      .then((connected) => {
+        this.isConnected = connected;
+      })
+      .catch(() => {
+        this.isConnected = false;
+      });
   }
 
   public getFirebaseStatusMessage(): { configured: boolean; message: string; userEmail?: string } {
@@ -121,6 +139,7 @@ class ProgressionService {
   }
 
   public async loadProfile(): Promise<PlayerProfile> {
+    await this.authReady;
     if (this.currentUser) {
       const docPath = `pilot_profiles/${this.currentUser.uid}`;
       try {
