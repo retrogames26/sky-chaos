@@ -216,8 +216,9 @@ export function buildPassengerAircraft(): AircraftParts {
       const frac = j / longitudinalSegs;
       const t = tMin + frac * (tMax - tMin);
       const z = -13.0 - t * totalLength;
-      const centerY = 2.65 - 0.45 * Math.pow(t, 1.4);
-      const r = 1.95 * Math.sqrt(Math.max(0, 1.0 - Math.pow(t, 1.85)));
+      const centerY = 2.65 - 0.22 * t;
+      // Smooth, symmetrical taper with a rounded radome tip.
+      const r = 1.95 * Math.pow(Math.max(0, 1 - t * t), 0.62);
 
       for (let i = 0; i <= radialSegs; i++) {
         const u = i / radialSegs;
@@ -270,8 +271,8 @@ export function buildPassengerAircraft(): AircraftParts {
   for (let j = 0; j <= 12; j++) {
     const t = 0.05 + (j / 12) * 0.62;
     const z = -13.0 - t * 6.4;
-    const centerY = 2.65 - 0.45 * Math.pow(t, 1.4);
-    const r = 1.95 * Math.sqrt(Math.max(0, 1.0 - Math.pow(t, 1.85)));
+    const centerY = 2.65 - 0.22 * t;
+    const r = 1.95 * Math.pow(Math.max(0, 1 - t * t), 0.62);
     for (const side of [-1, 1]) {
       const angle = (side * Math.PI) / 2 + 0.05;
       const x = (r + 0.015) * Math.sin(angle);
