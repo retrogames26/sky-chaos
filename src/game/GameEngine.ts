@@ -755,6 +755,11 @@ export class GameEngine {
         break;
       }
 
+      case 'CARGO_DOOR': {
+        this.toggleCargoDoor();
+        break;
+      }
+
       case 'PILOT_SEAT': {
         this.enterPilotSeat();
         break;
@@ -902,7 +907,6 @@ export class GameEngine {
 
   public toggleCabinDoor(fromRemote = false) {
     this.telemetry.cabinDoorClosed = !this.telemetry.cabinDoorClosed;
-    this.telemetry.cargoDoorClosed = this.telemetry.cabinDoorClosed;
     soundEngine.playDoorLatch(this.telemetry.cabinDoorClosed);
 
     if (this.telemetry.cabinDoorClosed) {
@@ -910,15 +914,32 @@ export class GameEngine {
         this.player.localPos.set(-1.1, 1.65, -9.5);
         this.player.insideCabin = true;
       }
-      this.triggerToast('Cabin & Cargo Doors CLOSED and ARMED for departure.', 'success');
+      this.triggerToast('Passenger door closed. Check the separate cargo door before departure.', 'success');
     } else {
-      this.triggerToast('Cabin Door OPENED. Boarding stairs deployed.', 'info');
+      this.triggerToast('Passenger door opened. Boarding stairs deployed.', 'info');
     }
 
     if (!fromRemote) {
       multiplayerClient.sendGameAction('door:set', undefined, {
         closed: this.telemetry.cabinDoorClosed,
       });
+    }
+    this.emitUIState();
+  }
+
+  public toggleCargoDoor(fromRemote = false) {
+    if (this.telemetry.enginesRunning && this.telemetry.onGround === false) {
+      this.triggerToast('Cargo door locked while airborne.', 'warning');
+      return;
+    }
+    this.telemetry.cargoDoorClosed = !this.telemetry.cargoDoorClosed;
+    soundEngine.playDoorLatch(this.telemetry.cargoDoorClosed);
+    this.triggerToast(
+      this.telemetry.cargoDoorClosed ? 'Rear cargo door closed and secured.' : 'Rear cargo door open. Align the belt loader to transfer baggage.',
+      this.telemetry.cargoDoorClosed ? 'success' : 'info'
+    );
+    if (!fromRemote) {
+      multiplayerClient.sendGameAction('cargo-door:set', undefined, { closed: this.telemetry.cargoDoorClosed });
     }
     this.emitUIState();
   }
@@ -1896,6 +1917,11 @@ export class GameEngine {
       const data = payload as { closed: boolean };
       if (this.telemetry.cabinDoorClosed !== data.closed) {
         this.toggleCabinDoor(true);
+      }
+    } else if (action === 'cargo-door:set') {
+      const data = payload as { closed: boolean };
+      if (this.telemetry.cargoDoorClosed !== data.closed) {
+        this.toggleCargoDoor(true);
       }
     } else if (action === 'mess:cleaned' && refId) {
       this.cleanCabinMess(refId, true);
