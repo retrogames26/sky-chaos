@@ -180,6 +180,10 @@ export function buildPassengerAircraft(): AircraftParts {
   leftWallAft.position.set(-1.82, 2.15, 14.9);
   leftWallAft.castShadow = true;
   root.add(leftWallAft);
+  // Dark recessed hold interior behind the hatch makes the opening read as a hole, not a painted panel.
+  const cargoOpeningInterior = new THREE.Mesh(new THREE.BoxGeometry(0.08, 1.02, 1.82), darkMetal);
+  cargoOpeningInterior.position.set(-1.7, 2.12, 12.8);
+  root.add(cargoOpeningInterior);
 
   const leftWallUpper = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.75, 24.7), fuselageWhite);
   leftWallUpper.position.set(-1.78, 3.65, 3.65);
@@ -603,7 +607,7 @@ export function buildPassengerAircraft(): AircraftParts {
   root.add(cabinDoorPivot);
 
   const cargoDoorPivot = new THREE.Group();
-  cargoDoorPivot.position.set(-1.93, 1.9, 12.8);
+  cargoDoorPivot.position.set(-1.93, 1.9, 11.9);
   // Contrasting inset and panel make the rear hold door readable from the apron.
   const cargoDoorInset = new THREE.Mesh(new THREE.BoxGeometry(0.06, 1.18, 1.9), darkMetal);
   cargoDoorInset.position.set(0, 0, 0.92);
