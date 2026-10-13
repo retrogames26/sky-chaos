@@ -29,7 +29,7 @@ const DEFAULT_PROFILE: PlayerProfile = {
   avgRating: 5.0,
   unlockedUpgrades: [],
   unlockedAchievements: [],
-  authMode: 'FIREBASE',
+  authMode: 'LOCAL_SERVER',
 };
 
 class ProgressionService {
