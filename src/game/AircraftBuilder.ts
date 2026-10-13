@@ -171,10 +171,15 @@ export function buildPassengerAircraft(): AircraftParts {
   leftFwdWall.position.set(-1.82, 2.8, -11.65);
   root.add(leftFwdWall);
 
-  const leftWallLower = new THREE.Mesh(new THREE.BoxGeometry(0.12, 1.1, 24.7), fuselageWhite);
-  leftWallLower.position.set(-1.82, 2.15, 3.65);
-  leftWallLower.castShadow = true;
-  root.add(leftWallLower);
+  // Split the lower port-side fuselage wall around the rear cargo hatch, leaving a true opening.
+  const leftWallForward = new THREE.Mesh(new THREE.BoxGeometry(0.12, 1.1, 20.5), fuselageWhite);
+  leftWallForward.position.set(-1.82, 2.15, 1.55);
+  leftWallForward.castShadow = true;
+  root.add(leftWallForward);
+  const leftWallAft = new THREE.Mesh(new THREE.BoxGeometry(0.12, 1.1, 2.2), fuselageWhite);
+  leftWallAft.position.set(-1.82, 2.15, 14.9);
+  leftWallAft.castShadow = true;
+  root.add(leftWallAft);
 
   const leftWallUpper = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.75, 24.7), fuselageWhite);
   leftWallUpper.position.set(-1.78, 3.65, 3.65);
@@ -609,6 +614,13 @@ export function buildPassengerAircraft(): AircraftParts {
   const cargoDoorHandle = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.16, 0.12), chromeMat);
   cargoDoorHandle.position.set(0.17, -0.18, 0.25);
   cargoDoorPivot.add(cargoDoorHandle);
+  const cargoLockBody = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.2, 0.18), darkMetal);
+  cargoLockBody.position.set(0.18, -0.38, 0.25);
+  cargoDoorPivot.add(cargoLockBody);
+  const cargoLockShackle = new THREE.Mesh(new THREE.TorusGeometry(0.075, 0.018, 8, 12, Math.PI), chromeMat);
+  cargoLockShackle.rotation.x = Math.PI / 2;
+  cargoLockShackle.position.set(0.2, -0.28, 0.25);
+  cargoDoorPivot.add(cargoLockShackle);
   cargoDoorPivot.rotation.y = -1.2;
   root.add(cargoDoorPivot);
 
@@ -756,6 +768,37 @@ export function buildPassengerAircraft(): AircraftParts {
   knob.position.y = 0.22;
   throttleHandle.add(knob);
   root.add(throttleHandle);
+
+  // Cabin meal trolley with visible trays, caster wheels and push handles.
+  const foodTrolley = new THREE.Group();
+  foodTrolley.name = 'CabinFoodTrolley';
+  foodTrolley.position.set(0.15, 0, -7.9);
+  const trolleyFrameMat = new THREE.MeshStandardMaterial({ color: 0x94a3b8, metalness: 0.55, roughness: 0.38 });
+  const trolleyBody = new THREE.Mesh(new THREE.BoxGeometry(0.82, 1.25, 1.0), trolleyFrameMat);
+  trolleyBody.position.y = 1.05;
+  foodTrolley.add(trolleyBody);
+  const trolleyFront = new THREE.Mesh(new THREE.BoxGeometry(0.84, 1.08, 0.06), darkMetal);
+  trolleyFront.position.set(0, 1.06, -0.53);
+  foodTrolley.add(trolleyFront);
+  for (let tray = 0; tray < 4; tray++) {
+    const trayMesh = new THREE.Mesh(new THREE.BoxGeometry(0.58, 0.06, 0.62), liveryAmber);
+    trayMesh.position.set(0, 1.75 - tray * 0.25, -0.02);
+    foodTrolley.add(trayMesh);
+  }
+  for (const wx of [-0.34, 0.34]) {
+    for (const wz of [-0.4, 0.4]) {
+      const caster = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, 0.07, 10), darkMetal);
+      caster.rotation.z = Math.PI / 2;
+      caster.position.set(wx, 0.12, wz);
+      foodTrolley.add(caster);
+    }
+  }
+  for (const sx of [-0.34, 0.34]) {
+    const handle = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.7, 8), chromeMat);
+    handle.position.set(sx, 1.8, 0.48);
+    foodTrolley.add(handle);
+  }
+  root.add(foodTrolley);
 
   const galleyCounter = new THREE.Mesh(new THREE.BoxGeometry(0.95, 1.15, 2.1), darkMetal);
   galleyCounter.position.set(1.25, 2.22, -10.8);
