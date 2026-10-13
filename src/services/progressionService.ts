@@ -78,7 +78,9 @@ class ProgressionService {
     }
     return {
       configured: true,
-      message: 'Cloud Firestore connected. Sign in with Google to sync pilot career across devices.',
+      message: this.isConnected
+        ? 'Cloud Firestore connection check passed. Sign in with Google to sync pilot career across devices.'
+        : 'Firebase is configured, but the Firestore connection check could not be confirmed. Guest progress is saved in this browser.',
     };
   }
 
