@@ -412,22 +412,30 @@ async function startServer() {
     });
 
     ws.on('close', () => {
-      if (joinedRoomId && joinedPlayerId) {
-        const room = rooms.get(joinedRoomId);
-        if (room) {
-          room.clients.delete(ws);
-          room.peers.delete(joinedPlayerId);
-          if (room.hostPlayerId === joinedPlayerId) {
-            const remaining = Array.from(room.peers.keys());
-            room.hostPlayerId = remaining[0] || '';
-          }
-          broadcastToRoom(room, {
-            type: 'peer:left',
-            playerId: joinedPlayerId,
-            hostPlayerId: room.hostPlayerId,
-          });
+      if (!joinedRoomId || !joinedPlayerId) return;
+      const room = rooms.get(joinedRoomId);
+      if (!room) return;
+
+      room.clients.delete(ws);
+
+      // A reconnect can briefly leave the old and new sockets alive together.
+      // Only remove the shared peer after its final socket has disconnected.
+      const playerStillConnected = Array.from(room.clients.values()).includes(joinedPlayerId);
+      if (!playerStillConnected) {
+        room.peers.delete(joinedPlayerId);
+        if (room.hostPlayerId === joinedPlayerId) {
+          const remaining = Array.from(room.peers.keys());
+          room.hostPlayerId = remaining[0] || '';
         }
+        broadcastToRoom(room, {
+          type: 'peer:left',
+          playerId: joinedPlayerId,
+          hostPlayerId: room.hostPlayerId,
+        });
       }
+
+      // Discard empty rooms so transient invite codes do not accumulate forever.
+      if (room.clients.size === 0) rooms.delete(joinedRoomId);
     });
   });
 
