@@ -1,0 +1,8 @@
+{
+  "name": "Sky Chaos: Worst Airline Simulator",
+  "description": "A chaotic, cooperative 3D multiplayer flight simulator where players manage intense airport ground operations and erratic passenger jet flights.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
