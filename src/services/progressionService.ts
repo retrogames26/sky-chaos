@@ -132,17 +132,9 @@ class ProgressionService {
       }
     }
 
-    try {
-      const res = await fetch('/api/profile');
-      if (res.ok) {
-        const serverProfile = (await res.json()) as PlayerProfile;
-        localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(serverProfile));
-        return serverProfile;
-      }
-    } catch {
-      // ignore
-    }
-
+    // Guest progression is browser-local. The server's legacy /api/profile
+    // endpoint stores one global profile and would overwrite one player's
+    // career with another player's data on shared deployments.
     return this.getLocalProfile();
   }
 
@@ -150,16 +142,6 @@ class ProgressionService {
     const clean = callsign.trim().slice(0, 24) || 'CAPT. CHAOS';
     const current = await this.loadProfile();
     const updated = { ...current, callsign: clean };
-
-    try {
-      await fetch('/api/profile/callsign', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ callsign: clean }),
-      });
-    } catch {
-      // ignore
-    }
 
     await this.saveProfile(updated);
     return updated;
@@ -184,21 +166,9 @@ class ProgressionService {
     let profile: PlayerProfile | null = null;
     let report: DebriefReport | null = null;
 
-    try {
-      const res = await fetch('/api/flight-complete', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-      if (res.ok) {
-        const data = (await res.json()) as { profile: PlayerProfile; report: DebriefReport };
-        profile = data.profile;
-        report = data.report;
-      }
-    } catch {
-      // ignore
-    }
-
+    // Compute rewards against the active player's profile below. The legacy
+    // /api/flight-complete endpoint mutates a single process-wide profile,
+    // which incorrectly merges guest careers across all players.
     if (!profile || !report) {
       const current = await this.loadProfile();
       const baseFlightReward = payload.outcome === 'CRASHED' ? 150 : 1200;
@@ -332,21 +302,8 @@ class ProgressionService {
   }
 
   public async purchaseUpgrade(upgradeId: string, cost: number): Promise<PlayerProfile> {
-    try {
-      const res = await fetch('/api/upgrade', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ upgradeId }),
-      });
-      if (res.ok) {
-        const updated = (await res.json()) as PlayerProfile;
-        await this.saveProfile(updated);
-        return updated;
-      }
-    } catch {
-      // fallback
-    }
-
+    // Upgrade purchases must be applied to the current player's profile,
+    // not the server's legacy shared profile.
     const current = await this.loadProfile();
     if (current.unlockedUpgrades.includes(upgradeId) || current.cash < cost) {
       return current;
