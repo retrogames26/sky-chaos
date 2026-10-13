@@ -1,4 +1,8 @@
-export type PlayerControlMode = 'ON_FOOT' | 'IN_COCKPIT';
+export type PlayerControlMode =
+  | 'ON_FOOT'
+  | 'IN_COCKPIT'
+  | 'DRIVING_TUG'
+  | 'DRIVING_FUEL_TRUCK';
 
 export type FlightPhase =
   | 'PREFLIGHT'
@@ -10,7 +14,16 @@ export type FlightPhase =
   | 'FLIGHT_COMPLETE'
   | 'FLIGHT_FAILED';
 
-export type CrewRole = 'PILOT' | 'CABIN_CREW';
+export type CrewRole = 'PILOT' | 'COPILOT' | 'CABIN_CREW' | 'GROUND_CREW';
+
+export interface LobbyMember {
+  playerId: string;
+  callsign: string;
+  role: CrewRole;
+  isHost: boolean;
+  isReady: boolean;
+  connectedAt: number;
+}
 
 export type MealType = 'Chicken' | 'Pasta' | 'Veggie' | 'Coffee';
 
@@ -120,7 +133,7 @@ export interface AircraftTelemetry {
   lateralOffsetMeters: number;
   onGround: boolean;
   inTurbulence: boolean;
-  cameraView: 'COCKPIT' | 'CHASE';
+  cameraView: 'COCKPIT' | 'CHASE' | 'WING';
   autopilotHold: boolean;
 }
 
@@ -148,7 +161,10 @@ export interface InteractionTarget {
     | 'CABIN_MESS'
     | 'PA_SYSTEM'
     | 'INCIDENT_FIX'
-    | 'ENGINE_START_SWITCH';
+    | 'ENGINE_START_SWITCH'
+    | 'DRIVE_TUG'
+    | 'FUEL_TRUCK'
+    | 'TOW_LUGGAGE';
   prompt: string;
   subPrompt?: string;
   distance: number;

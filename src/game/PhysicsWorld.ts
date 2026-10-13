@@ -14,7 +14,16 @@ export interface PlayerPhysicsState {
   insideCabin: boolean;
 }
 
+export interface VehiclePhysicsState {
+  position: THREE.Vector3;
+  yaw: number;
+  speed: number;
+  steerAngle: number;
+}
+
 export class PhysicsWorld {
+  private airborneTime: number = 0;
+
   public updatePlayerWalk(
     dt: number,
     player: PlayerPhysicsState,
@@ -22,7 +31,7 @@ export class PhysicsWorld {
     cabinDoorClosed: boolean
   ) {
     const clampedDt = Math.min(dt, 0.05);
-    const moveSpeed = input.sprint ? 6.4 : 4.1;
+    const moveSpeed = input.sprint ? 6.8 : 4.2;
 
     const forwardX = -Math.sin(player.yaw);
     const forwardZ = -Math.cos(player.yaw);
@@ -109,8 +118,8 @@ export class PhysicsWorld {
           else if (prevX >= 2.15) nextX = 2.15;
         }
 
-        nextX = Math.max(-22, Math.min(28, nextX));
-        nextZ = Math.max(-45, Math.min(35, nextZ));
+        nextX = Math.max(-50, Math.min(65, nextX));
+        nextZ = Math.max(-80, Math.min(60, nextZ));
 
         player.localPos.x = nextX;
         player.localPos.z = nextZ;
@@ -122,6 +131,53 @@ export class PhysicsWorld {
         player.insideCabin = false;
       }
     }
+  }
+
+  public updateVehiclePhysics(
+    dt: number,
+    vehicle: VehiclePhysicsState,
+    input: { throttle: number; steer: number; brake: boolean },
+    maxSpeed: number = 14
+  ) {
+    const clampedDt = Math.min(dt, 0.05);
+    const accelRate = 18.0;
+    const drag = 2.5;
+    const brakeDecel = 32.0;
+
+    if (input.brake) {
+      if (vehicle.speed > 0) {
+        vehicle.speed = Math.max(0, vehicle.speed - brakeDecel * clampedDt);
+      } else if (vehicle.speed < 0) {
+        vehicle.speed = Math.min(0, vehicle.speed + brakeDecel * clampedDt);
+      }
+    } else if (Math.abs(input.throttle) > 0.05) {
+      vehicle.speed = Math.max(
+        -maxSpeed * 0.45,
+        Math.min(maxSpeed, vehicle.speed + input.throttle * accelRate * clampedDt)
+      );
+    } else {
+      if (Math.abs(vehicle.speed) > 0.1) {
+        vehicle.speed -= Math.sign(vehicle.speed) * drag * clampedDt;
+      } else {
+        vehicle.speed = 0;
+      }
+    }
+
+    const steerTarget = input.steer * 0.65;
+    vehicle.steerAngle = THREE.MathUtils.lerp(vehicle.steerAngle, steerTarget, 10 * clampedDt);
+
+    if (Math.abs(vehicle.speed) > 0.1) {
+      const turnRate = (vehicle.speed / 2.6) * Math.sin(vehicle.steerAngle);
+      vehicle.yaw += turnRate * clampedDt;
+    }
+
+    vehicle.position.x += -Math.sin(vehicle.yaw) * vehicle.speed * clampedDt;
+    vehicle.position.z += -Math.cos(vehicle.yaw) * vehicle.speed * clampedDt;
+
+    // Boundaries on airport tarmac
+    vehicle.position.x = Math.max(-30, Math.min(75, vehicle.position.x));
+    vehicle.position.z = Math.max(-120, Math.min(45, vehicle.position.z));
+    vehicle.position.y = 0;
   }
 
   public updateLooseLuggagePhysics(
@@ -163,6 +219,7 @@ export class PhysicsWorld {
     controls: {
       pitchInput: number;
       rollInput: number;
+      yawInput?: number;
       throttleDelta: number;
       brakes: boolean;
     },
@@ -181,94 +238,154 @@ export class PhysicsWorld {
       return { nextPhase: phase };
     }
 
-    telemetry.throttlePct = Math.max(
-      0,
-      Math.min(100, telemetry.throttlePct + controls.throttleDelta * 42 * clampedDt)
-    );
+    // 1. Throttle adjustment
+    if (controls.throttleDelta !== 0) {
+      telemetry.throttlePct = Math.max(
+        0,
+        Math.min(100, telemetry.throttlePct + controls.throttleDelta * 55 * clampedDt)
+      );
+    }
     telemetry.brakesOn = controls.brakes;
 
+    // Fuel consumption
     if (telemetry.enginesRunning && telemetry.fuelPct > 0) {
-      telemetry.fuelPct = Math.max(0, telemetry.fuelPct - (0.04 + (telemetry.throttlePct / 100) * 0.14) * clampedDt);
+      telemetry.fuelPct = Math.max(
+        0,
+        telemetry.fuelPct - (0.02 + (telemetry.throttlePct / 100) * 0.08) * clampedDt
+      );
     } else if (telemetry.fuelPct <= 0) {
       telemetry.throttlePct = 0;
+      telemetry.enginesRunning = false;
     }
 
-    const maxThrustAccel = telemetry.enginesRunning ? (telemetry.throttlePct / 100) * 34.0 : 0;
-    const flapDrag = telemetry.flapsDeg === 30 ? 4.2 : telemetry.flapsDeg === 15 ? 1.8 : 0.0;
-    const gearDrag = telemetry.gearDown ? 2.4 : 0.4;
-    const aeroDrag = (telemetry.airspeedKts * telemetry.airspeedKts) * 0.00055 + flapDrag + gearDrag;
-    const brakeDecel = telemetry.onGround && telemetry.brakesOn ? 38.0 : 0;
-    const pitchGravityAccel = -Math.sin(THREE.MathUtils.degToRad(telemetry.pitchDeg)) * 12.0;
+    // 2. Thrust, Drag, Acceleration
+    // Max thrust acceleration tuned for realistic Boeing 737 / Airbus A320 profile
+    const thrustPower = (telemetry.throttlePct / 100);
+    const maxThrustAccel = telemetry.enginesRunning ? thrustPower * 42.0 : 0;
 
-    const netAccelKts = maxThrustAccel - aeroDrag - brakeDecel + (telemetry.onGround ? 0 : pitchGravityAccel);
-    telemetry.airspeedKts = Math.max(0, Math.min(265, telemetry.airspeedKts + netAccelKts * clampedDt));
+    const flapDrag = telemetry.flapsDeg === 30 ? 5.5 : telemetry.flapsDeg === 15 ? 2.2 : 0.0;
+    const gearDrag = telemetry.gearDown ? 3.0 : 0.4;
+    const aeroDrag = (telemetry.airspeedKts * telemetry.airspeedKts) * 0.00048 + flapDrag + gearDrag;
+    const brakeDecel = telemetry.onGround && telemetry.brakesOn ? 42.0 : 0;
+    const groundRollingResistance = telemetry.onGround && !telemetry.brakesOn ? 3.5 : 0;
+    const pitchGravityAccel = -Math.sin(THREE.MathUtils.degToRad(telemetry.pitchDeg)) * 14.0;
+
+    const netAccelKts =
+      maxThrustAccel -
+      aeroDrag -
+      brakeDecel -
+      groundRollingResistance +
+      (telemetry.onGround ? 0 : pitchGravityAccel);
+
+    telemetry.airspeedKts = Math.max(0, Math.min(310, telemetry.airspeedKts + netAccelKts * clampedDt));
+
+    // 3. Ground handling vs airborne handling
+    const yawPedal = controls.yawInput || 0;
 
     if (telemetry.onGround) {
-      const steerRateDeg = Math.min(38, telemetry.airspeedKts * 0.85);
-      telemetry.headingDeg = (telemetry.headingDeg - controls.rollInput * steerRateDeg * clampedDt + 360) % 360;
-      telemetry.rollDeg = THREE.MathUtils.lerp(telemetry.rollDeg, 0, 8 * clampedDt);
+      this.airborneTime = 0;
+      // Front gear steering: agile at taxi speed, stabilized at takeoff roll
+      const taxiSteerMultiplier = telemetry.airspeedKts < 35 ? 42.0 : Math.max(12.0, 50 - telemetry.airspeedKts * 0.4);
+      const steerInput = controls.rollInput !== 0 ? controls.rollInput : yawPedal;
+      telemetry.headingDeg = (telemetry.headingDeg - steerInput * taxiSteerMultiplier * clampedDt + 360) % 360;
 
-      if (telemetry.airspeedKts > 92 && controls.pitchInput > 0) {
-        telemetry.pitchDeg = Math.min(15, telemetry.pitchDeg + controls.pitchInput * 22 * clampedDt);
+      // Wings level on ground
+      telemetry.rollDeg = THREE.MathUtils.lerp(telemetry.rollDeg, 0, 10 * clampedDt);
+
+      // Pitch rotation: at speed > 85 kts, pilot can pull back on yoke (pitchInput > 0) to rotate nose up!
+      if (telemetry.airspeedKts > 80 && controls.pitchInput > 0) {
+        telemetry.pitchDeg = Math.min(16, telemetry.pitchDeg + controls.pitchInput * 24 * clampedDt);
+      } else if (controls.pitchInput < 0) {
+        telemetry.pitchDeg = Math.max(0, telemetry.pitchDeg + controls.pitchInput * 18 * clampedDt);
       } else {
-        telemetry.pitchDeg = THREE.MathUtils.lerp(telemetry.pitchDeg, 0, 6 * clampedDt);
+        telemetry.pitchDeg = THREE.MathUtils.lerp(telemetry.pitchDeg, 0, 8 * clampedDt);
       }
     } else {
-      const pitchRate = 24.0;
-      const rollRate = 42.0;
+      this.airborneTime += clampedDt;
+      // Airborne pitch and roll rates
+      const pitchRate = 26.0;
+      const rollRate = 48.0;
+      const yawRate = 18.0;
 
       telemetry.pitchDeg = Math.max(
-        -22,
-        Math.min(24, telemetry.pitchDeg + controls.pitchInput * pitchRate * clampedDt)
+        -25,
+        Math.min(26, telemetry.pitchDeg + controls.pitchInput * pitchRate * clampedDt)
       );
       telemetry.rollDeg = Math.max(
-        -48,
-        Math.min(48, telemetry.rollDeg + controls.rollInput * rollRate * clampedDt)
+        -55,
+        Math.min(55, telemetry.rollDeg + controls.rollInput * rollRate * clampedDt)
       );
 
+      // Direct rudder yaw pedals
+      if (Math.abs(yawPedal) > 0.05) {
+        telemetry.headingDeg = (telemetry.headingDeg - yawPedal * yawRate * clampedDt + 360) % 360;
+      }
+
+      // Roll self-stabilization (wings-level tendency)
       if (Math.abs(controls.rollInput) < 0.05) {
         telemetry.rollDeg = THREE.MathUtils.lerp(
           telemetry.rollDeg,
           0,
-          (telemetry.autopilotHold ? 3.5 : 0.8) * clampedDt
+          (telemetry.autopilotHold ? 4.5 : 1.2) * clampedDt
         );
       }
+      // Autopilot attitude hold in cruise
       if (telemetry.autopilotHold && Math.abs(controls.pitchInput) < 0.05) {
         telemetry.pitchDeg = THREE.MathUtils.lerp(telemetry.pitchDeg, 2.0, 2.5 * clampedDt);
       }
 
+      // Turbulence shaking
       if (telemetry.inTurbulence) {
-        const damp = upgrades.hasTurbulenceDamper ? 0.55 : 1.0;
+        const damp = upgrades.hasTurbulenceDamper ? 0.45 : 1.0;
         telemetry.rollDeg += (Math.random() - 0.5) * 26 * damp * clampedDt;
         telemetry.pitchDeg += (Math.random() - 0.5) * 14 * damp * clampedDt;
       }
 
-      const turnRateDegPerSec = -Math.sin(THREE.MathUtils.degToRad(telemetry.rollDeg)) * 22.0;
+      // Coordinated turn from banking
+      const turnRateDegPerSec = -Math.sin(THREE.MathUtils.degToRad(telemetry.rollDeg)) * 26.0;
       telemetry.headingDeg = (telemetry.headingDeg + turnRateDegPerSec * clampedDt + 360) % 360;
     }
 
-    const flapLiftBonus = telemetry.flapsDeg === 30 ? 18 : telemetry.flapsDeg === 15 ? 10 : 0;
+    // 4. Aerodynamic Lift & Vertical Movement
+    const flapLiftBonus = telemetry.flapsDeg === 30 ? 24 : telemetry.flapsDeg === 15 ? 14 : 0;
     const effectiveSpeed = telemetry.airspeedKts + flapLiftBonus;
 
+    // Ground effect cushion when within 5m of runway
+    const altitudeMeters = Math.max(0, aircraftGroup.position.y);
+    const groundEffect = altitudeMeters < 5.0 ? 1.0 + (5.0 - altitudeMeters) * 0.06 : 1.0;
+
     let verticalMetersPerSec = 0;
+
     if (telemetry.onGround) {
-      if (effectiveSpeed > 112 && telemetry.pitchDeg > 3.5) {
+      // Rotation & Takeoff criteria:
+      // Can rotate when airspeed reaches Vr (~95-105 kts), or with flaps at ~85 kts.
+      // Lift factor based on speed & pitch angle
+      const rotationLift = Math.sin(THREE.MathUtils.degToRad(telemetry.pitchDeg)) * 1.5;
+      const baseLiftRatio = (effectiveSpeed / 108) * (effectiveSpeed / 108);
+      const totalLiftForce = baseLiftRatio * (1.0 + rotationLift) * groundEffect;
+
+      if (effectiveSpeed >= 88 && (telemetry.pitchDeg >= 2.0 || effectiveSpeed >= 120) && totalLiftForce >= 0.92) {
+        // LIFTOFF! Wheels unstick from runway
         telemetry.onGround = false;
-        verticalMetersPerSec = 4.5;
+        this.airborneTime = 0.1;
+        verticalMetersPerSec = Math.max(2.5, Math.sin(THREE.MathUtils.degToRad(Math.max(3, telemetry.pitchDeg))) * (telemetry.airspeedKts * 0.32));
       } else {
         verticalMetersPerSec = 0;
         aircraftGroup.position.y = 0;
       }
     } else {
-      const liftFactor = Math.min(1.25, Math.pow(effectiveSpeed / 118, 2));
-      const climbFromPitch = Math.sin(THREE.MathUtils.degToRad(telemetry.pitchDeg)) * (telemetry.airspeedKts * 0.24);
-      const stallSink = liftFactor < 0.85 ? (0.85 - liftFactor) * 22.0 : 0;
-      const bankSink = (1 - Math.cos(THREE.MathUtils.degToRad(telemetry.rollDeg))) * 6.5;
+      // Airborne lift and gravity calculation
+      const liftFactor = Math.min(1.4, Math.pow(effectiveSpeed / 112, 2)) * groundEffect;
+      const climbFromPitch = Math.sin(THREE.MathUtils.degToRad(telemetry.pitchDeg)) * (telemetry.airspeedKts * 0.28);
+      const stallSink = liftFactor < 0.75 ? (0.75 - liftFactor) * 26.0 : 0;
+      const bankSink = (1 - Math.cos(THREE.MathUtils.degToRad(telemetry.rollDeg))) * 7.5;
+
       verticalMetersPerSec = climbFromPitch * liftFactor - stallSink - bankSink;
     }
 
     telemetry.verticalSpeedFpm = Math.round(verticalMetersPerSec * 196.85);
 
+    // 5. Integrate Position
     const groundSpeedMps = telemetry.airspeedKts * 0.58;
     const yawRad = THREE.MathUtils.degToRad(-telemetry.headingDeg);
 
@@ -276,38 +393,52 @@ export class PhysicsWorld {
     aircraftGroup.position.z += -Math.cos(yawRad) * groundSpeedMps * clampedDt;
     aircraftGroup.position.y += verticalMetersPerSec * clampedDt;
 
+    // 6. Touchdown and Ground Collision Detection
     let touchdownEvent: { verticalSpeedFpm: number; hardLanding: boolean } | undefined;
-    if (!telemetry.onGround && aircraftGroup.position.y <= 0.05) {
-      aircraftGroup.position.y = 0;
-      telemetry.onGround = true;
-      const impactFpm = telemetry.verticalSpeedFpm;
-      telemetry.verticalSpeedFpm = 0;
-      telemetry.pitchDeg = 0;
-      telemetry.rollDeg = 0;
 
-      const safeLimit = upgrades.hasTitaniumGear ? -920 : -680;
-      const isHard = impactFpm < safeLimit || !telemetry.gearDown;
-      if (!telemetry.gearDown) {
-        telemetry.airframeHealth = Math.max(0, telemetry.airframeHealth - 45);
-      } else if (impactFpm < safeLimit) {
-        telemetry.airframeHealth = Math.max(0, telemetry.airframeHealth - 28);
+    // CRITICAL: Only trigger touchdown if we have been airborne and are descending onto ground level!
+    if (!telemetry.onGround) {
+      if (aircraftGroup.position.y <= 0.0 && this.airborneTime > 0.6) {
+        // Touchdown on runway!
+        aircraftGroup.position.y = 0;
+        telemetry.onGround = true;
+        const impactFpm = telemetry.verticalSpeedFpm;
+        telemetry.verticalSpeedFpm = 0;
+        telemetry.pitchDeg = Math.min(5, Math.max(0, telemetry.pitchDeg * 0.3));
+        telemetry.rollDeg = 0;
+
+        const safeLimit = upgrades.hasTitaniumGear ? -920 : -680;
+        const isHard = impactFpm < safeLimit || !telemetry.gearDown;
+        if (!telemetry.gearDown) {
+          telemetry.airframeHealth = Math.max(0, telemetry.airframeHealth - 45);
+        } else if (impactFpm < safeLimit) {
+          telemetry.airframeHealth = Math.max(0, telemetry.airframeHealth - 25);
+        }
+        touchdownEvent = { verticalSpeedFpm: impactFpm, hardLanding: isHard };
+      } else if (aircraftGroup.position.y < 0.0) {
+        // Enforce ground plane while climbing or near threshold
+        aircraftGroup.position.y = 0;
       }
-      touchdownEvent = { verticalSpeedFpm: impactFpm, hardLanding: isHard };
+    } else {
+      aircraftGroup.position.y = 0;
     }
 
     telemetry.altitudeFt = Math.max(0, Math.round(aircraftGroup.position.y * 12.5));
 
+    // 7. Update Aircraft Rotation Order and Angles
     aircraftGroup.rotation.order = 'YXZ';
     aircraftGroup.rotation.y = yawRad;
     aircraftGroup.rotation.x = THREE.MathUtils.degToRad(telemetry.pitchDeg);
     aircraftGroup.rotation.z = THREE.MathUtils.degToRad(-telemetry.rollDeg);
 
-    const destThresholdZ = -1820;
+    // 8. Distance and Navigation Calculations
+    const destThresholdZ = -2350;
     const dz = aircraftGroup.position.z - destThresholdZ;
     const dx = aircraftGroup.position.x - 45;
     telemetry.distanceToDestMeters = Math.max(0, Math.round(Math.hypot(dx, dz)));
     telemetry.lateralOffsetMeters = Math.round(dx);
 
+    // 9. Flight Phase State Machine Transitions
     let nextPhase: FlightPhase = phase;
     if (telemetry.airframeHealth <= 0) {
       nextPhase = 'FLIGHT_FAILED';
@@ -315,21 +446,21 @@ export class PhysicsWorld {
       nextPhase = 'TAXI';
     } else if ((phase === 'TAXI' || phase === 'PREFLIGHT') && telemetry.airspeedKts > 45) {
       nextPhase = 'TAKEOFF';
-    } else if (phase === 'TAKEOFF' && !telemetry.onGround && telemetry.altitudeFt > 120) {
+    } else if (phase === 'TAKEOFF' && !telemetry.onGround && telemetry.altitudeFt > 100) {
       nextPhase = 'CRUISE';
-    } else if (phase === 'CRUISE' && aircraftGroup.position.z < -1150) {
+    } else if (phase === 'CRUISE' && aircraftGroup.position.z < -1400) {
       nextPhase = 'APPROACH';
     } else if (
       (phase === 'APPROACH' || phase === 'CRUISE') &&
       telemetry.onGround &&
-      aircraftGroup.position.z < -1650
+      aircraftGroup.position.z < -1900
     ) {
       nextPhase = 'LANDING';
     } else if (
       phase === 'LANDING' &&
       telemetry.onGround &&
-      telemetry.airspeedKts < 6 &&
-      aircraftGroup.position.z < -1650
+      telemetry.airspeedKts < 8 &&
+      aircraftGroup.position.z < -2000
     ) {
       nextPhase = 'FLIGHT_COMPLETE';
     }

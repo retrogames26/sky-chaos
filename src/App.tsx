@@ -19,6 +19,11 @@ export function App() {
   const viewportRef = useRef<HTMLDivElement | null>(null);
   const engineRef = useRef<GameEngine | null>(null);
 
+  const initialRoom =
+    (typeof window !== 'undefined'
+      ? new URLSearchParams(window.location.search).get('room')
+      : null) || 'SKY-101';
+
   const [currentRoute, setCurrentRoute] = useState<FlightRoute>(FLIGHT_ROUTES[0]);
   const [profile, setProfile] = useState<PlayerProfile>({
     uid: 'pilot_local_01',
@@ -33,17 +38,19 @@ export function App() {
     authMode: 'LOCAL_SERVER',
   });
   const [uiSnapshot, setUiSnapshot] = useState<GameUIStateSnapshot | null>(null);
-  const [activeModal, setActiveModal] = useState<'NONE' | 'BRIEFING' | 'PAUSE'>('NONE');
+  const [activeModal, setActiveModal] = useState<
+    'NONE' | 'BRIEFING' | 'PAUSE' | 'MULTIPLAYER'
+  >('NONE');
   const [debriefReport, setDebriefReport] = useState<DebriefReport | null>(null);
   const [volume, setVolume] = useState<number>(0.65);
   const [muted, setMuted] = useState<boolean>(false);
-  const [roomCode, setRoomCode] = useState<string>('SKY-101');
+  const [roomCode, setRoomCode] = useState<string>(initialRoom.toUpperCase());
   const [crewRole, setCrewRole] = useState<CrewRole>('PILOT');
 
   useEffect(() => {
     progressionService.loadProfile().then((loaded) => {
       setProfile(loaded);
-      multiplayerClient.connect('SKY-101', loaded.callsign, 'PILOT');
+      multiplayerClient.connect(roomCode, loaded.callsign, crewRole);
     });
   }, []);
 
@@ -78,7 +85,7 @@ export function App() {
   }, []);
 
   const handleOpenModal = (
-    modal: 'MANIFEST' | 'ANNOUNCEMENT' | 'GALLEY' | 'BRIEFING' | 'PAUSE'
+    modal: 'MANIFEST' | 'ANNOUNCEMENT' | 'GALLEY' | 'BRIEFING' | 'PAUSE' | 'MULTIPLAYER'
   ) => {
     if (!engineRef.current) return;
     if (modal === 'MANIFEST' || modal === 'ANNOUNCEMENT' || modal === 'GALLEY') {
@@ -116,9 +123,10 @@ export function App() {
   };
 
   const handleJoinMultiplayerRoom = (room: string, role: CrewRole) => {
-    setRoomCode(room);
+    const cleanRoom = room.trim().toUpperCase() || 'SKY-101';
+    setRoomCode(cleanRoom);
     setCrewRole(role);
-    multiplayerClient.connect(room, profile.callsign, role);
+    multiplayerClient.connect(cleanRoom, profile.callsign, role);
     soundEngine.playTaskSuccess();
   };
 
@@ -167,6 +175,7 @@ export function App() {
           ui={uiSnapshot}
           route={currentRoute}
           muted={muted}
+          roomCode={roomCode}
           onToggleMute={handleToggleMute}
           onOpenModal={handleOpenModal}
           onQuickDoorAndEngines={() => engineRef.current?.quickCloseDoorAndStartEngines()}
@@ -177,6 +186,13 @@ export function App() {
             engineRef.current?.resetScenario(currentRoute);
           }}
           onRequestPointerLock={() => engineRef.current?.requestPointerLock()}
+          onSetThrottlePct={(pct) => engineRef.current?.setThrottlePct(pct)}
+          onAdjustThrottle={(delta) => engineRef.current?.adjustThrottle(delta)}
+          onCycleCamera={() => engineRef.current?.cycleCameraView()}
+          onCycleFlaps={() => engineRef.current?.cycleFlaps()}
+          onToggleGear={() => engineRef.current?.toggleLandingGear()}
+          onApplyBrakes={(brakes) => engineRef.current?.applyWheelBrakes(brakes)}
+          onExitVehicle={() => engineRef.current?.triggerInteractKeyE()}
         />
       )}
 
@@ -204,6 +220,8 @@ export function App() {
           onPurchaseUpgrade={handlePurchaseUpgrade}
           onUpdateCallsign={handleUpdateCallsign}
           onJoinMultiplayerRoom={handleJoinMultiplayerRoom}
+          onStartMultiplayerFlight={() => multiplayerClient.startFlight()}
+          onKickMultiplayerPlayer={(pId) => multiplayerClient.kickPlayer(pId)}
           onVolumeChange={handleVolumeChange}
           onToggleMute={handleToggleMute}
           onDismissDebrief={() => {

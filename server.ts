@@ -26,15 +26,18 @@ interface ServerPlayerProfile {
 interface RoomPeer {
   playerId: string;
   callsign: string;
-  role: 'PILOT' | 'CABIN_CREW';
-  mode: 'ON_FOOT' | 'IN_COCKPIT';
+  role: 'PILOT' | 'COPILOT' | 'CABIN_CREW' | 'GROUND_CREW';
+  mode: 'ON_FOOT' | 'IN_COCKPIT' | 'DRIVING_TUG' | 'DRIVING_FUEL_TRUCK';
   localPosition: { x: number; y: number; z: number };
   yaw: number;
   heldLabel: string | null;
+  isHost?: boolean;
 }
 
 interface MultiplayerRoom {
   roomId: string;
+  hostPlayerId: string;
+  inFlight: boolean;
   clients: Map<WebSocket, string>;
   peers: Map<string, RoomPeer>;
   sharedActions: Array<{ action: string; refId?: string; payload?: unknown }>;
@@ -67,6 +70,8 @@ function getOrCreateRoom(roomId: string): MultiplayerRoom {
   if (!room) {
     room = {
       roomId,
+      hostPlayerId: '',
+      inFlight: false,
       clients: new Map(),
       peers: new Map(),
       sharedActions: [],
@@ -264,16 +269,29 @@ async function startServer() {
           joinedPlayerId = playerId;
 
           const room = getOrCreateRoom(roomId);
+          if (!room.hostPlayerId) {
+            room.hostPlayerId = playerId;
+          }
           room.clients.set(ws, playerId);
+
+          const role =
+            msg.role === 'COPILOT'
+              ? 'COPILOT'
+              : msg.role === 'CABIN_CREW'
+              ? 'CABIN_CREW'
+              : msg.role === 'GROUND_CREW'
+              ? 'GROUND_CREW'
+              : 'PILOT';
 
           const initialPeer: RoomPeer = {
             playerId,
             callsign: String(msg.callsign || 'CREW'),
-            role: msg.role === 'CABIN_CREW' ? 'CABIN_CREW' : 'PILOT',
+            role,
             mode: 'ON_FOOT',
             localPosition: { x: -7.5, y: 0, z: -9.5 },
             yaw: 0,
             heldLabel: null,
+            isHost: room.hostPlayerId === playerId,
           };
           room.peers.set(playerId, initialPeer);
 
@@ -281,17 +299,63 @@ async function startServer() {
             JSON.stringify({
               type: 'room:state',
               roomId,
+              hostPlayerId: room.hostPlayerId,
+              inFlight: room.inFlight,
               peers: Array.from(room.peers.values()),
               sharedActions: room.sharedActions,
             })
           );
 
-          broadcastToRoom(room, { type: 'peer:updated', peer: initialPeer }, ws);
+          broadcastToRoom(room, { type: 'peer:updated', peer: initialPeer, hostPlayerId: room.hostPlayerId }, ws);
+        } else if (msg.type === 'lobby:role' && joinedRoomId && joinedPlayerId) {
+          const room = rooms.get(joinedRoomId);
+          if (room) {
+            const peer = room.peers.get(joinedPlayerId);
+            if (peer) {
+              peer.role = msg.role;
+              broadcastToRoom(room, { type: 'peer:updated', peer, hostPlayerId: room.hostPlayerId });
+            }
+          }
+        } else if (msg.type === 'lobby:start' && joinedRoomId && joinedPlayerId) {
+          const room = rooms.get(joinedRoomId);
+          if (room && room.hostPlayerId === joinedPlayerId) {
+            room.inFlight = true;
+            broadcastToRoom(room, { type: 'lobby:started', roomId: joinedRoomId });
+          }
+        } else if (msg.type === 'lobby:kick' && joinedRoomId && joinedPlayerId) {
+          const room = rooms.get(joinedRoomId);
+          if (room && room.hostPlayerId === joinedPlayerId && msg.targetPlayerId) {
+            const targetId = String(msg.targetPlayerId);
+            for (const [cWs, pId] of room.clients.entries()) {
+              if (pId === targetId) {
+                cWs.send(JSON.stringify({ type: 'lobby:kicked', reason: 'Removed by room host' }));
+                cWs.close();
+                break;
+              }
+            }
+          }
         } else if (msg.type === 'peer:move' && joinedRoomId) {
           const room = rooms.get(joinedRoomId);
           if (room && msg.peer) {
+            msg.peer.isHost = room.hostPlayerId === msg.peer.playerId;
             room.peers.set(msg.peer.playerId, msg.peer);
-            broadcastToRoom(room, { type: 'peer:updated', peer: msg.peer }, ws);
+            broadcastToRoom(room, { type: 'peer:updated', peer: msg.peer, hostPlayerId: room.hostPlayerId }, ws);
+          }
+        } else if (msg.type === 'vehicle:sync' && joinedRoomId) {
+          const room = rooms.get(joinedRoomId);
+          if (room) {
+            broadcastToRoom(
+              room,
+              {
+                type: 'vehicle:sync',
+                playerId: msg.playerId,
+                vehicleId: msg.vehicleId,
+                position: msg.position,
+                yaw: msg.yaw,
+                speed: msg.speed,
+              },
+              ws
+            );
           }
         } else if (msg.type === 'game:action' && joinedRoomId) {
           const room = rooms.get(joinedRoomId);
@@ -340,7 +404,15 @@ async function startServer() {
         if (room) {
           room.clients.delete(ws);
           room.peers.delete(joinedPlayerId);
-          broadcastToRoom(room, { type: 'peer:left', playerId: joinedPlayerId });
+          if (room.hostPlayerId === joinedPlayerId) {
+            const remaining = Array.from(room.peers.keys());
+            room.hostPlayerId = remaining[0] || '';
+          }
+          broadcastToRoom(room, {
+            type: 'peer:left',
+            playerId: joinedPlayerId,
+            hostPlayerId: room.hostPlayerId,
+          });
         }
       }
     });

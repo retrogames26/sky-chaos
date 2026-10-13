@@ -18,7 +18,7 @@ import {
 } from '../types/game';
 import { AircraftParts, buildPassengerAircraft } from './AircraftBuilder';
 import { ANNOUNCEMENT_OPTIONS, createInitialScenario } from './GameCatalog';
-import { PhysicsWorld, PlayerPhysicsState } from './PhysicsWorld';
+import { PhysicsWorld, PlayerPhysicsState, VehiclePhysicsState } from './PhysicsWorld';
 import { buildAirportAndFlightWorld, WorldObjects } from './WorldBuilder';
 import { soundEngine } from '../services/SoundEngine';
 import { multiplayerClient, MultiplayerMessage } from '../services/multiplayerClient';
@@ -40,7 +40,6 @@ export interface GameUIStateSnapshot {
   showAnnouncementMenu: boolean;
   showGalleyMenu: boolean;
   pointerLocked: boolean;
-  playerInsideCabin: boolean;
   peers: PeerPlayer[];
 }
 
@@ -80,6 +79,20 @@ export class GameEngine {
   private messMeshes: Map<string, THREE.Mesh> = new Map();
   private heldItemViewGroup: THREE.Group;
   private peerMeshes: Map<string, THREE.Group> = new Map();
+
+  private tugState: VehiclePhysicsState = {
+    position: new THREE.Vector3(-5.4, 0, -7.2),
+    yaw: 0,
+    speed: 0,
+    steerAngle: 0,
+  };
+  private fuelTruckState: VehiclePhysicsState = {
+    position: new THREE.Vector3(11.5, 0, -6.5),
+    yaw: 0,
+    speed: 0,
+    steerAngle: 0,
+  };
+  private cartAttachedToTug: boolean = false;
 
   private interactionTarget: InteractionTarget | null = null;
   private activeIncident: ActiveIncident | null = null;
@@ -430,12 +443,28 @@ export class GameEngine {
       candidates.push({ ...item, distance: dist, score });
     };
 
-    if (!this.player.insideCabin && !this.telemetry.cabinDoorClosed) {
-      consider(new THREE.Vector3(-5.2, 0.8, -9.5), 3.6, {
-        id: 'board_stairs',
-        type: 'BOARD_STAIRS',
-        prompt: 'Press E to board aircraft (or walk directly up the stairs)',
-        subPrompt: 'Enters the forward cabin vestibule',
+    if (!this.player.insideCabin) {
+      if (!this.telemetry.cabinDoorClosed) {
+        consider(new THREE.Vector3(-5.2, 0.8, -9.5), 3.8, {
+          id: 'board_stairs',
+          type: 'BOARD_STAIRS',
+          prompt: 'Press E to board aircraft (or walk directly up the stairs)',
+          subPrompt: 'Enters the forward cabin vestibule',
+        });
+      }
+
+      consider(new THREE.Vector3(this.tugState.position.x, 0.65, this.tugState.position.z), 4.2, {
+        id: 'tug_vehicle',
+        type: 'DRIVE_TUG',
+        prompt: 'Press E to Drive Baggage Tug',
+        subPrompt: 'Tow luggage carts to cargo hold & drive across tarmac (WASD)',
+      });
+
+      consider(new THREE.Vector3(this.fuelTruckState.position.x, 1.2, this.fuelTruckState.position.z), 4.8, {
+        id: 'fuel_truck_vehicle',
+        type: 'FUEL_TRUCK',
+        prompt: 'Press E to Refuel Aircraft & Drive Fuel Truck',
+        subPrompt: 'Fills twin wing fuel tanks to 100% (WASD to drive tanker)',
       });
     }
 
@@ -615,6 +644,14 @@ export class GameEngine {
       this.exitPilotSeat();
       return;
     }
+    if (this.controlMode === 'DRIVING_TUG') {
+      this.exitTug();
+      return;
+    }
+    if (this.controlMode === 'DRIVING_FUEL_TRUCK') {
+      this.exitFuelTruck();
+      return;
+    }
 
     const target = this.findBestInteractionTarget();
     if (!target) return;
@@ -693,9 +730,90 @@ export class GameEngine {
         this.resolveActiveIncident();
         break;
       }
+
+      case 'DRIVE_TUG': {
+        this.enterTug();
+        break;
+      }
+
+      case 'FUEL_TRUCK': {
+        this.enterFuelTruck();
+        break;
+      }
     }
 
     this.emitUIState();
+  }
+
+  public enterTug() {
+    this.controlMode = 'DRIVING_TUG';
+    this.releasePointerLock();
+    soundEngine.playDoorLatch(true);
+    this.triggerToast(
+      'Driving Baggage Tug! W/S Drive, A/D Steer, Space Brake. Drive near the luggage cart to hitch it, then to the cargo door to load! Press E to exit.',
+      'success'
+    );
+    this.emitUIState();
+  }
+
+  public exitTug() {
+    this.controlMode = 'ON_FOOT';
+    this.player.localPos.set(this.world.tugGroup.position.x - 2.0, 0, this.world.tugGroup.position.z);
+    this.player.insideCabin = false;
+    soundEngine.playDoorLatch(false);
+    this.triggerToast('Exited Baggage Tug. On-foot walking restored.', 'info');
+    this.emitUIState();
+  }
+
+  public enterFuelTruck() {
+    this.controlMode = 'DRIVING_FUEL_TRUCK';
+    this.releasePointerLock();
+    soundEngine.playDoorLatch(true);
+    this.triggerToast(
+      'Driving Aviation Fuel Tanker! W/S Drive, A/D Steer, Space Brake. Drive near aircraft wings to fuel tanks to 100%! Press E to exit.',
+      'info'
+    );
+    this.emitUIState();
+  }
+
+  public exitFuelTruck() {
+    this.controlMode = 'ON_FOOT';
+    this.player.localPos.set(this.world.fuelTruckGroup.position.x - 2.2, 0, this.world.fuelTruckGroup.position.z);
+    this.player.insideCabin = false;
+    soundEngine.playDoorLatch(false);
+    this.triggerToast('Exited Fuel Truck. On-foot walking restored.', 'info');
+    this.emitUIState();
+  }
+
+  public refuelAircraft() {
+    if (this.telemetry.fuelPct < 99) {
+      this.telemetry.fuelPct = 100;
+      soundEngine.playTaskSuccess();
+      this.triggerToast('Aircraft Jet-A1 fuel tanks topped off to 100% capacity!', 'success');
+      this.emitUIState();
+    }
+  }
+
+  public autoUnloadBaggageCart() {
+    let newlyLoaded = 0;
+    for (const bag of this.luggage) {
+      if (bag.state === 'ON_CART') {
+        bag.state = 'STOWED_CARGO';
+        const m = this.luggageMeshes.get(bag.id);
+        if (m) m.visible = false;
+        newlyLoaded++;
+        multiplayerClient.sendGameAction('luggage:stowed', bag.id);
+      }
+    }
+    if (newlyLoaded > 0) {
+      soundEngine.playTaskSuccess();
+      const loaded = this.luggage.filter((b) => b.state === 'STOWED_CABIN' || b.state === 'STOWED_CARGO').length;
+      this.triggerToast(
+        `Luggage Cart unloaded into cargo hold! (${loaded}/${this.luggage.length} bags loaded)`,
+        'success'
+      );
+      this.emitUIState();
+    }
   }
 
   public toggleCabinDoor(fromRemote = false) {
@@ -1190,20 +1308,85 @@ export class GameEngine {
         );
         this.flightPhase = res.nextPhase;
       }
+    } else if (this.controlMode === 'DRIVING_TUG') {
+      const throttle =
+        (this.keys.has('KeyW') || this.keys.has('ArrowUp') ? 1 : 0) -
+        (this.keys.has('KeyS') || this.keys.has('ArrowDown') ? 1 : 0);
+      const steer =
+        (this.keys.has('KeyA') || this.keys.has('ArrowLeft') ? 1 : 0) -
+        (this.keys.has('KeyD') || this.keys.has('ArrowRight') ? 1 : 0);
+      const brake = this.keys.has('Space');
+
+      this.physics.updateVehiclePhysics(dt, this.tugState, { throttle, steer, brake }, 16);
+      this.world.tugGroup.position.copy(this.tugState.position);
+      this.world.tugGroup.rotation.y = this.tugState.yaw;
+
+      const cartDist = this.tugState.position.distanceTo(this.world.luggageCartGroup.position);
+      if (!this.cartAttachedToTug && cartDist < 3.2) {
+        this.cartAttachedToTug = true;
+        soundEngine.playTaskSuccess();
+        this.triggerToast('Baggage Cart HITCHED to Tug! Drive to rear aircraft cargo door to unload.', 'success');
+      }
+
+      if (this.cartAttachedToTug) {
+        const cartOffset = new THREE.Vector3(
+          Math.sin(this.tugState.yaw) * 3.2,
+          0,
+          Math.cos(this.tugState.yaw) * 3.2
+        );
+        this.world.luggageCartGroup.position.copy(this.tugState.position).add(cartOffset);
+        this.world.luggageCartGroup.rotation.y = this.tugState.yaw;
+
+        const doorDist = this.world.luggageCartGroup.position.distanceTo(new THREE.Vector3(-2.2, 0, 10.5));
+        if (doorDist < 4.8) {
+          this.autoUnloadBaggageCart();
+        }
+      }
+    } else if (this.controlMode === 'DRIVING_FUEL_TRUCK') {
+      const throttle =
+        (this.keys.has('KeyW') || this.keys.has('ArrowUp') ? 1 : 0) -
+        (this.keys.has('KeyS') || this.keys.has('ArrowDown') ? 1 : 0);
+      const steer =
+        (this.keys.has('KeyA') || this.keys.has('ArrowLeft') ? 1 : 0) -
+        (this.keys.has('KeyD') || this.keys.has('ArrowRight') ? 1 : 0);
+      const brake = this.keys.has('Space');
+
+      this.physics.updateVehiclePhysics(dt, this.fuelTruckState, { throttle, steer, brake }, 13);
+      this.world.fuelTruckGroup.position.copy(this.fuelTruckState.position);
+      this.world.fuelTruckGroup.rotation.y = this.fuelTruckState.yaw;
+
+      const wingDist = this.fuelTruckState.position.distanceTo(new THREE.Vector3(9.5, 0, -2.0));
+      if (wingDist < 8.5 && this.telemetry.fuelPct < 99) {
+        this.refuelAircraft();
+      }
     } else {
+      // IN_COCKPIT
       let pitchInput = 0;
+      // KeyS or ArrowDown: Stick BACK -> PITCH UP / ROTATE / CLIMB!
       if (this.keys.has('KeyS') || this.keys.has('ArrowDown')) pitchInput += 1;
+      // KeyW or ArrowUp: Stick FORWARD -> PITCH DOWN!
       if (this.keys.has('KeyW') || this.keys.has('ArrowUp')) {
-        pitchInput += this.telemetry.onGround && this.telemetry.airspeedKts > 100 ? 0.85 : -1;
+        if (!this.telemetry.onGround || this.telemetry.airspeedKts > 60) {
+          pitchInput -= 1;
+        }
       }
 
       const rollInput =
         (this.keys.has('KeyD') || this.keys.has('ArrowRight') ? 1 : 0) -
         (this.keys.has('KeyA') || this.keys.has('ArrowLeft') ? 1 : 0);
 
-      const throttleDelta =
-        (this.keys.has('ShiftLeft') || this.keys.has('ShiftRight') ? 1 : 0) -
-        (this.keys.has('ControlLeft') || this.keys.has('ControlRight') ? 1 : 0);
+      const yawInput =
+        (this.keys.has('KeyE') ? 1 : 0) -
+        (this.keys.has('KeyQ') ? 1 : 0);
+
+      let throttleDelta =
+        (this.keys.has('ShiftLeft') || this.keys.has('ShiftRight') || this.keys.has('KeyZ') || this.keys.has('Equal') ? 1 : 0) -
+        (this.keys.has('ControlLeft') || this.keys.has('ControlRight') || this.keys.has('KeyX') || this.keys.has('Minus') ? 1 : 0);
+
+      // On runway roll at low speed, pressing W accelerates throttle to takeoff thrust!
+      if (this.telemetry.onGround && this.telemetry.airspeedKts < 65 && (this.keys.has('KeyW') || this.keys.has('ArrowUp'))) {
+        throttleDelta = Math.max(throttleDelta, 1);
+      }
 
       const brakes = this.keys.has('Space');
 
@@ -1212,7 +1395,7 @@ export class GameEngine {
         this.aircraft.root,
         this.telemetry,
         this.flightPhase,
-        { pitchInput, rollInput, throttleDelta, brakes },
+        { pitchInput, rollInput, yawInput, throttleDelta, brakes },
         {
           hasTurbulenceDamper: this.unlockedUpgrades.includes('upg_yaw_damper'),
           hasTitaniumGear: this.unlockedUpgrades.includes('upg_oleo_struts'),
@@ -1439,21 +1622,52 @@ export class GameEngine {
   private updateCameraTransform() {
     this.aircraft.root.updateMatrixWorld();
 
-    if (this.controlMode === 'IN_COCKPIT' && this.telemetry.cameraView === 'CHASE') {
-      const localOffset = new THREE.Vector3(0, 9.5, 36.0);
-      const worldCamPos = localOffset.applyMatrix4(this.aircraft.root.matrixWorld);
-      const lookAtLocal = new THREE.Vector3(0, 2.8, -14.0);
-      const worldLookAt = lookAtLocal.applyMatrix4(this.aircraft.root.matrixWorld);
-
-      this.camera.position.lerp(worldCamPos, 0.18);
-      this.camera.lookAt(worldLookAt);
+    if (this.controlMode === 'DRIVING_TUG') {
+      const tugPos = this.world.tugGroup.position;
+      const yaw = this.tugState.yaw;
+      const camOffset = new THREE.Vector3(Math.sin(yaw) * 6.5, 3.2, Math.cos(yaw) * 6.5);
+      this.camera.position.copy(tugPos).add(camOffset);
+      this.camera.lookAt(tugPos.x, tugPos.y + 1.2, tugPos.z);
       this.heldItemViewGroup.visible = false;
       return;
     }
 
-    this.heldItemViewGroup.visible = this.controlMode === 'ON_FOOT';
+    if (this.controlMode === 'DRIVING_FUEL_TRUCK') {
+      const truckPos = this.world.fuelTruckGroup.position;
+      const yaw = this.fuelTruckState.yaw;
+      const camOffset = new THREE.Vector3(Math.sin(yaw) * 9.5, 4.2, Math.cos(yaw) * 9.5);
+      this.camera.position.copy(truckPos).add(camOffset);
+      this.camera.lookAt(truckPos.x, truckPos.y + 1.8, truckPos.z);
+      this.heldItemViewGroup.visible = false;
+      return;
+    }
 
     if (this.controlMode === 'IN_COCKPIT') {
+      this.heldItemViewGroup.visible = false;
+
+      if (this.telemetry.cameraView === 'CHASE') {
+        const localOffset = new THREE.Vector3(0, 9.2, 38.0);
+        const worldCamPos = localOffset.applyMatrix4(this.aircraft.root.matrixWorld);
+        const lookAtLocal = new THREE.Vector3(0, 2.6, -12.0);
+        const worldLookAt = lookAtLocal.applyMatrix4(this.aircraft.root.matrixWorld);
+
+        this.camera.position.copy(worldCamPos);
+        this.camera.lookAt(worldLookAt);
+        return;
+      }
+
+      if (this.telemetry.cameraView === 'WING') {
+        const localOffset = new THREE.Vector3(2.4, 2.2, 1.8);
+        const worldCamPos = localOffset.applyMatrix4(this.aircraft.root.matrixWorld);
+        const lookAtLocal = new THREE.Vector3(14.0, 1.2, -1.0);
+        const worldLookAt = lookAtLocal.applyMatrix4(this.aircraft.root.matrixWorld);
+
+        this.camera.position.copy(worldCamPos);
+        this.camera.lookAt(worldLookAt);
+        return;
+      }
+
+      // COCKPIT FIRST PERSON
       const localEye = new THREE.Vector3(-0.55, 2.76, -15.18);
       const worldEye = localEye.applyMatrix4(this.aircraft.root.matrixWorld);
       this.camera.position.copy(worldEye);
@@ -1463,21 +1677,24 @@ export class GameEngine {
       );
       const shipQuat = new THREE.Quaternion().setFromEuler(this.aircraft.root.rotation);
       this.camera.quaternion.copy(shipQuat).multiply(lookQuat);
-    } else {
-      const localEye = new THREE.Vector3(
-        this.player.localPos.x,
-        this.player.localPos.y + 1.56,
-        this.player.localPos.z
-      );
-      const worldEye = localEye.applyMatrix4(this.aircraft.root.matrixWorld);
-      this.camera.position.copy(worldEye);
-
-      const lookQuat = new THREE.Quaternion().setFromEuler(
-        new THREE.Euler(this.player.pitch, this.player.yaw, 0, 'YXZ')
-      );
-      const shipQuat = new THREE.Quaternion().setFromEuler(this.aircraft.root.rotation);
-      this.camera.quaternion.copy(shipQuat).multiply(lookQuat);
+      return;
     }
+
+    // ON_FOOT
+    this.heldItemViewGroup.visible = true;
+    const localEye = new THREE.Vector3(
+      this.player.localPos.x,
+      this.player.localPos.y + 1.56,
+      this.player.localPos.z
+    );
+    const worldEye = localEye.applyMatrix4(this.aircraft.root.matrixWorld);
+    this.camera.position.copy(worldEye);
+
+    const lookQuat = new THREE.Quaternion().setFromEuler(
+      new THREE.Euler(this.player.pitch, this.player.yaw, 0, 'YXZ')
+    );
+    const shipQuat = new THREE.Quaternion().setFromEuler(this.aircraft.root.rotation);
+    this.camera.quaternion.copy(shipQuat).multiply(lookQuat);
   }
 
   private setupMultiplayerListeners() {
@@ -1522,6 +1739,19 @@ export class GameEngine {
           this.telemetry.enginesRunning = msg.telemetry.enginesRunning;
           this.flightPhase = msg.telemetry.phase as FlightPhase;
         }
+      } else if (msg.type === 'vehicle:sync') {
+        if (msg.playerId !== multiplayerClient.getPlayerId()) {
+          if (msg.vehicleId === 'tug' && this.controlMode !== 'DRIVING_TUG') {
+            this.world.tugGroup.position.set(msg.position.x, msg.position.y, msg.position.z);
+            this.world.tugGroup.rotation.y = msg.yaw;
+          } else if (msg.vehicleId === 'fuel_truck' && this.controlMode !== 'DRIVING_FUEL_TRUCK') {
+            this.world.fuelTruckGroup.position.set(msg.position.x, msg.position.y, msg.position.z);
+            this.world.fuelTruckGroup.rotation.y = msg.yaw;
+          }
+        }
+      } else if (msg.type === 'lobby:started') {
+        this.triggerToast('Flight Departure Started by Host!', 'success');
+        soundEngine.playPaChime();
       }
     });
   }
@@ -1626,34 +1856,82 @@ export class GameEngine {
       this.resetScenario();
     } else if (e.code === 'KeyG' && this.controlMode === 'IN_COCKPIT') {
       e.preventDefault();
-      if (!this.telemetry.onGround) {
-        this.telemetry.gearDown = !this.telemetry.gearDown;
-        soundEngine.playInteract();
-        this.triggerToast(
-          `Landing Gear ${this.telemetry.gearDown ? 'EXTENDED (DOWN)' : 'RETRACTED (UP)'}`,
-          'info'
-        );
-        this.emitUIState();
-      } else {
-        this.triggerToast('Cannot retract landing gear while on the ground!', 'warning');
-      }
+      this.toggleLandingGear();
     } else if (e.code === 'KeyF' && this.controlMode === 'IN_COCKPIT') {
       e.preventDefault();
-      const nextFlaps: Record<0 | 15 | 30, 0 | 15 | 30> = { 0: 15, 15: 30, 30: 0 };
-      this.telemetry.flapsDeg = nextFlaps[this.telemetry.flapsDeg];
-      soundEngine.playInteract();
-      this.triggerToast(`Wing Flaps set to ${this.telemetry.flapsDeg}°`, 'info');
-      this.emitUIState();
-    } else if (e.code === 'KeyC' && this.controlMode === 'IN_COCKPIT') {
+      this.cycleFlaps();
+    } else if (e.code === 'KeyC') {
       e.preventDefault();
-      this.telemetry.cameraView =
-        this.telemetry.cameraView === 'COCKPIT' ? 'CHASE' : 'COCKPIT';
-      this.emitUIState();
+      this.cycleCameraView();
     } else if (e.code === 'KeyT' && this.controlMode === 'IN_COCKPIT' && this.telemetry.onGround) {
       e.preventDefault();
       this.quickLineupOnRunway();
+    } else if (this.controlMode === 'IN_COCKPIT') {
+      if (e.code === 'Digit1') {
+        this.setThrottlePct(0);
+      } else if (e.code === 'Digit2') {
+        this.setThrottlePct(50);
+      } else if (e.code === 'Digit3') {
+        this.setThrottlePct(85);
+      } else if (e.code === 'Digit4') {
+        this.setThrottlePct(100);
+      }
     }
   };
+
+  public setThrottlePct(pct: number) {
+    this.telemetry.throttlePct = Math.max(0, Math.min(100, Math.round(pct)));
+    if (this.telemetry.throttlePct > 0) {
+      this.telemetry.enginesRunning = true;
+    }
+    this.emitUIState();
+  }
+
+  public adjustThrottle(deltaPct: number) {
+    this.setThrottlePct(this.telemetry.throttlePct + deltaPct);
+  }
+
+  public setCameraView(view: 'COCKPIT' | 'CHASE' | 'WING') {
+    this.telemetry.cameraView = view;
+    this.triggerToast(`Camera switched to ${view} view`, 'info');
+    this.emitUIState();
+  }
+
+  public cycleCameraView() {
+    const cycle: Record<'COCKPIT' | 'CHASE' | 'WING', 'COCKPIT' | 'CHASE' | 'WING'> = {
+      COCKPIT: 'CHASE',
+      CHASE: 'WING',
+      WING: 'COCKPIT',
+    };
+    this.setCameraView(cycle[this.telemetry.cameraView]);
+  }
+
+  public toggleLandingGear() {
+    if (!this.telemetry.onGround) {
+      this.telemetry.gearDown = !this.telemetry.gearDown;
+      soundEngine.playInteract();
+      this.triggerToast(
+        `Landing Gear ${this.telemetry.gearDown ? 'EXTENDED (DOWN)' : 'RETRACTED (UP)'}`,
+        'info'
+      );
+      this.emitUIState();
+    } else {
+      this.triggerToast('Cannot retract landing gear while on the ground!', 'warning');
+    }
+  }
+
+  public cycleFlaps() {
+    const nextFlaps: Record<0 | 15 | 30, 0 | 15 | 30> = { 0: 15, 15: 30, 30: 0 };
+    this.telemetry.flapsDeg = nextFlaps[this.telemetry.flapsDeg];
+    soundEngine.playInteract();
+    this.triggerToast(`Wing Flaps set to ${this.telemetry.flapsDeg}°`, 'info');
+    this.emitUIState();
+  }
+
+  public applyWheelBrakes(brakes: boolean) {
+    this.telemetry.brakesOn = brakes;
+    this.emitUIState();
+  }
 
   private handleKeyUp = (e: KeyboardEvent) => {
     this.keys.delete(e.code);
@@ -1867,7 +2145,6 @@ export class GameEngine {
       showAnnouncementMenu: this.showAnnouncementMenu,
       showGalleyMenu: this.showGalleyMenu,
       pointerLocked: this.pointerLocked,
-      playerInsideCabin: this.player.insideCabin,
       peers: Array.from(this.peers.values()),
     });
   }

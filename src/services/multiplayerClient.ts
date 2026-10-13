@@ -4,16 +4,28 @@ export type MultiplayerMessage =
   | {
       type: 'room:state';
       roomId: string;
+      hostPlayerId: string;
+      inFlight: boolean;
       peers: PeerPlayer[];
       sharedActions: Array<{ action: string; refId?: string; payload?: unknown }>;
     }
   | {
       type: 'peer:updated';
       peer: PeerPlayer;
+      hostPlayerId?: string;
     }
   | {
       type: 'peer:left';
       playerId: string;
+      hostPlayerId?: string;
+    }
+  | {
+      type: 'lobby:started';
+      roomId: string;
+    }
+  | {
+      type: 'lobby:kicked';
+      reason: string;
     }
   | {
       type: 'game:action';
@@ -21,6 +33,14 @@ export type MultiplayerMessage =
       action: string;
       refId?: string;
       payload?: unknown;
+    }
+  | {
+      type: 'vehicle:sync';
+      playerId: string;
+      vehicleId: string;
+      position: { x: number; y: number; z: number };
+      yaw: number;
+      speed: number;
     }
   | {
       type: 'aircraft:sync';
@@ -47,6 +67,7 @@ class MultiplayerClient {
   private roomId: string = 'SKY-101';
   private callsign: string = 'CAPT. MAVERICK';
   private role: CrewRole = 'PILOT';
+  private hostPlayerId: string = '';
   private connected: boolean = false;
   private reconnectTimer: number | null = null;
 
@@ -66,6 +87,26 @@ class MultiplayerClient {
     return this.role;
   }
 
+  public getHostPlayerId(): string {
+    return this.hostPlayerId;
+  }
+
+  public isHost(): boolean {
+    return this.hostPlayerId === this.playerId || !this.hostPlayerId;
+  }
+
+  public getInviteLink(): string {
+    if (typeof window === 'undefined') return '';
+    return `${window.location.origin}${window.location.pathname}?room=${encodeURIComponent(this.roomId)}`;
+  }
+
+  public generateRoomCode(): string {
+    const prefixes = ['SKY', 'AIR', 'CHAOS', 'JET', 'FLIGHT'];
+    const p = prefixes[Math.floor(Math.random() * prefixes.length)];
+    const num = Math.floor(100 + Math.random() * 900);
+    return `${p}-${num}`;
+  }
+
   public subscribe(listener: Listener): () => void {
     this.listeners.add(listener);
     return () => {
@@ -74,6 +115,13 @@ class MultiplayerClient {
   }
 
   private emitLocal(msg: MultiplayerMessage) {
+    if (msg.type === 'room:state') {
+      this.hostPlayerId = msg.hostPlayerId;
+    } else if (msg.type === 'peer:updated' && msg.hostPlayerId) {
+      this.hostPlayerId = msg.hostPlayerId;
+    } else if (msg.type === 'peer:left' && msg.hostPlayerId) {
+      this.hostPlayerId = msg.hostPlayerId;
+    }
     this.listeners.forEach((fn) => fn(msg));
   }
 
@@ -138,6 +186,36 @@ class MultiplayerClient {
     }
   }
 
+  public setRole(role: CrewRole) {
+    this.role = role;
+    if (!this.connected) return;
+    this.sendRaw({
+      type: 'lobby:role',
+      roomId: this.roomId,
+      playerId: this.playerId,
+      role,
+    });
+  }
+
+  public startFlight() {
+    if (!this.connected) return;
+    this.sendRaw({
+      type: 'lobby:start',
+      roomId: this.roomId,
+      playerId: this.playerId,
+    });
+  }
+
+  public kickPlayer(targetPlayerId: string) {
+    if (!this.connected) return;
+    this.sendRaw({
+      type: 'lobby:kick',
+      roomId: this.roomId,
+      playerId: this.playerId,
+      targetPlayerId,
+    });
+  }
+
   public sendPlayerTransform(
     localPosition: { x: number; y: number; z: number },
     yaw: number,
@@ -156,7 +234,26 @@ class MultiplayerClient {
         localPosition,
         yaw,
         heldLabel,
+        isHost: this.isHost(),
       },
+    });
+  }
+
+  public sendVehicleSync(
+    vehicleId: string,
+    position: { x: number; y: number; z: number },
+    yaw: number,
+    speed: number
+  ) {
+    if (!this.connected) return;
+    this.sendRaw({
+      type: 'vehicle:sync',
+      roomId: this.roomId,
+      playerId: this.playerId,
+      vehicleId,
+      position,
+      yaw,
+      speed,
     });
   }
 

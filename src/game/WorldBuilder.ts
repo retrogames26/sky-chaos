@@ -5,6 +5,9 @@ export interface WorldObjects {
   radarDish: THREE.Group;
   destBeaconLight: THREE.PointLight;
   cloudGroup: THREE.Group;
+  tugGroup: THREE.Group;
+  fuelTruckGroup: THREE.Group;
+  luggageCartGroup: THREE.Group;
 }
 
 export function buildAirportAndFlightWorld(): WorldObjects {
@@ -150,26 +153,86 @@ export function buildAirportAndFlightWorld(): WorldObjects {
   }
   worldGroup.add(luggageCart);
 
+  // Tug with wheels, cab, seat and beacon light
   const tug = new THREE.Group();
+  tug.name = 'AirportTug';
   tug.position.set(-5.4, 0, -7.2);
-  const tugBody = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.9, 2.0), vehicleWhite);
-  tugBody.position.y = 0.65;
-  tug.add(tugBody);
+
+  const tugChassis = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.45, 2.6), amberAccent);
+  tugChassis.position.y = 0.35;
+  tug.add(tugChassis);
+
+  const tugHood = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.55, 1.3), vehicleWhite);
+  tugHood.position.set(0, 0.8, -0.6);
+  tug.add(tugHood);
+
+  const tugSeat = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.55, 0.55), darkMetal);
+  tugSeat.position.set(0, 0.8, 0.45);
+  tug.add(tugSeat);
+
+  const tugSteering = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 0.05, 12), darkMetal);
+  tugSteering.rotation.x = Math.PI / 4;
+  tugSteering.position.set(0, 1.05, 0.05);
+  tug.add(tugSteering);
+
+  const tugBeacon = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.12, 0.12, 0.15, 8),
+    new THREE.MeshBasicMaterial({ color: 0xf59e0b })
+  );
+  tugBeacon.position.set(0, 1.15, -0.8);
+  tug.add(tugBeacon);
+
+  for (const wx of [-0.85, 0.85]) {
+    for (const wz of [-0.75, 0.75]) {
+      const wheel = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.32, 0.22, 16), darkMetal);
+      wheel.rotation.z = Math.PI / 2;
+      wheel.position.set(wx, 0.32, wz);
+      wheel.castShadow = true;
+      tug.add(wheel);
+    }
+  }
   worldGroup.add(tug);
 
   const hazardPallet = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.22, 4.0), redLineMat);
   hazardPallet.position.set(-6.2, 0.11, 4.8);
   worldGroup.add(hazardPallet);
 
+  // Aviation Fuel Tanker Truck
   const fuelTruck = new THREE.Group();
+  fuelTruck.name = 'AirportFuelTruck';
   fuelTruck.position.set(11.5, 0, -6.5);
-  const tank = new THREE.Mesh(new THREE.CylinderGeometry(1.15, 1.15, 6.2, 18), vehicleWhite);
+
+  const fuelChassis = new THREE.Mesh(new THREE.BoxGeometry(2.3, 0.5, 7.8), darkMetal);
+  fuelChassis.position.y = 0.55;
+  fuelTruck.add(fuelChassis);
+
+  const tank = new THREE.Mesh(new THREE.CylinderGeometry(1.25, 1.25, 5.2, 20), vehicleWhite);
   tank.rotation.x = Math.PI / 2;
-  tank.position.set(0, 1.65, 0);
+  tank.position.set(0, 1.9, 0.6);
   fuelTruck.add(tank);
-  const cab = new THREE.Mesh(new THREE.BoxGeometry(2.1, 1.9, 2.2), amberAccent);
-  cab.position.set(0, 1.35, -4.1);
+
+  const cab = new THREE.Mesh(new THREE.BoxGeometry(2.2, 2.0, 2.2), amberAccent);
+  cab.position.set(0, 1.7, -2.7);
   fuelTruck.add(cab);
+
+  const cabWindshield = new THREE.Mesh(new THREE.BoxGeometry(2.0, 0.8, 0.2), terminalGlass);
+  cabWindshield.position.set(0, 2.0, -3.75);
+  fuelTruck.add(cabWindshield);
+
+  const fuelHoseReel = new THREE.Mesh(new THREE.CylinderGeometry(0.45, 0.45, 0.4, 12), redLineMat);
+  fuelHoseReel.rotation.z = Math.PI / 2;
+  fuelHoseReel.position.set(-1.15, 1.4, -0.4);
+  fuelTruck.add(fuelHoseReel);
+
+  for (const fx of [-1.15, 1.15]) {
+    for (const fz of [-2.6, 0.4, 2.4]) {
+      const fw = new THREE.Mesh(new THREE.CylinderGeometry(0.48, 0.48, 0.28, 16), darkMetal);
+      fw.rotation.z = Math.PI / 2;
+      fw.position.set(fx, 0.48, fz);
+      fw.castShadow = true;
+      fuelTruck.add(fw);
+    }
+  }
   worldGroup.add(fuelTruck);
 
   const createRampWorker = (x: number, z: number, rotY: number) => {
@@ -319,5 +382,8 @@ export function buildAirportAndFlightWorld(): WorldObjects {
     radarDish,
     destBeaconLight,
     cloudGroup,
+    tugGroup: tug,
+    fuelTruckGroup: fuelTruck,
+    luggageCartGroup: luggageCart,
   };
 }
