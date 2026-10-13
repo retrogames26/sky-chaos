@@ -11,6 +11,7 @@ import {
   User,
 } from './firebase';
 import { DebriefReport, PlayerProfile } from '../types/game';
+import { FLIGHT_ROUTES } from '../game/GameCatalog';
 
 const LOCAL_STORAGE_KEY = 'sky_chaos_pilot_profile_v1';
 
@@ -194,7 +195,9 @@ class ProgressionService {
     // which incorrectly merges guest careers across all players.
     if (!profile || !report) {
       const current = await this.loadProfile();
-      const baseFlightReward = payload.outcome === 'CRASHED' ? 150 : 1200;
+      const selectedRoute = FLIGHT_ROUTES.find((route) => route.id === payload.routeId);
+      const baseFlightReward =
+        payload.outcome === 'CRASHED' ? 150 : selectedRoute?.baseReward ?? 1200;
       const luggageBonus = payload.luggageLoadedCount * 85;
       const ticketAccuracyBonus = payload.ticketsAccurateCount * 70;
       const hazardousCargoBonus =
@@ -270,8 +273,10 @@ class ProgressionService {
       };
 
       report = {
-        flightNumber: 'SC-101',
-        routeTitle: 'Metro Chaos Intl → Destination',
+        flightNumber: selectedRoute?.flightNumber ?? 'SC-101',
+        routeTitle: selectedRoute
+          ? `${selectedRoute.departureName} → ${selectedRoute.destinationName}`
+          : 'Metro Chaos Intl → Destination',
         outcome: payload.outcome,
         summaryReason:
           payload.outcome === 'SUCCESS'
