@@ -14,6 +14,10 @@ import { DebriefReport, PlayerProfile } from '../types/game';
 
 const LOCAL_STORAGE_KEY = 'sky_chaos_pilot_profile_v1';
 
+function profileStorageKey(uid?: string): string {
+  return uid ? `${LOCAL_STORAGE_KEY}_${uid}` : LOCAL_STORAGE_KEY;
+}
+
 const DEFAULT_PROFILE: PlayerProfile = {
   uid: 'pilot_guest_01',
   callsign: 'CAPT. MAVERICK-ISH',
@@ -85,7 +89,7 @@ class ProgressionService {
           uid: user.uid,
           authMode: 'FIREBASE',
         };
-        localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(profile));
+        localStorage.setItem(profileStorageKey(user.uid), JSON.stringify(profile));
         return profile;
       } else {
         const currentLocal = this.getLocalProfile();
@@ -96,7 +100,7 @@ class ProgressionService {
           authMode: 'FIREBASE',
         };
         await setDoc(doc(db, 'pilot_profiles', user.uid), initialProfile);
-        localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(initialProfile));
+        localStorage.setItem(profileStorageKey(user.uid), JSON.stringify(initialProfile));
         return initialProfile;
       }
     } catch (err) {
@@ -105,7 +109,7 @@ class ProgressionService {
   }
 
   public getLocalProfile(): PlayerProfile {
-    const raw = localStorage.getItem(LOCAL_STORAGE_KEY);
+    const raw = localStorage.getItem(profileStorageKey());
     if (raw) {
       try {
         return JSON.parse(raw) as PlayerProfile;
@@ -124,7 +128,7 @@ class ProgressionService {
         if (snap.exists()) {
           const cloudData = snap.data() as PlayerProfile;
           const profile = { ...cloudData, uid: this.currentUser.uid, authMode: 'FIREBASE' as const };
-          localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(profile));
+          localStorage.setItem(profileStorageKey(this.currentUser?.uid), JSON.stringify(profile));
           return profile;
         }
       } catch (err) {
@@ -318,7 +322,7 @@ class ProgressionService {
   }
 
   private async saveProfile(profile: PlayerProfile) {
-    localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(profile));
+    localStorage.setItem(profileStorageKey(this.currentUser?.uid), JSON.stringify(profile));
 
     if (this.currentUser) {
       const docPath = `pilot_profiles/${this.currentUser.uid}`;
