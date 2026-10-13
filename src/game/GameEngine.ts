@@ -1773,16 +1773,15 @@ export class GameEngine {
         return;
       }
 
-      // COCKPIT FIRST PERSON
-      const localEye = new THREE.Vector3(-0.55, 2.76, -15.18);
+      // PILOT COCKPIT: eye point is in aircraft-local coordinates, just behind the windscreen.
+      // The old camera multiplied the aircraft rotation by the on-foot yaw/pitch, which could
+      // double-rotate the view and aim through the fuselage.
+      const localEye = new THREE.Vector3(0, 3.12, -16.05);
       const worldEye = localEye.applyMatrix4(this.aircraft.root.matrixWorld);
       this.camera.position.copy(worldEye);
-
-      const lookQuat = new THREE.Quaternion().setFromEuler(
-        new THREE.Euler(this.player.pitch, this.player.yaw, 0, 'YXZ')
-      );
-      const shipQuat = new THREE.Quaternion().setFromEuler(this.aircraft.root.rotation);
-      this.camera.quaternion.copy(shipQuat).multiply(lookQuat);
+      this.camera.quaternion.copy(this.aircraft.root.quaternion);
+      this.camera.rotateY(this.player.yaw * 0.35);
+      this.camera.rotateX(this.player.pitch * 0.35);
       return;
     }
 
