@@ -2342,8 +2342,13 @@ export class GameEngine {
   }
 
   public dispose() {
-    if (this.animFrameId) cancelAnimationFrame(this.animFrameId);
+    if (this.animFrameId !== null) cancelAnimationFrame(this.animFrameId);
     if (this.unsubMultiplayer) this.unsubMultiplayer();
+    if (this.toastTimeout !== null) window.clearTimeout(this.toastTimeout);
+    if (this.subtitleTimeout !== null) window.clearTimeout(this.subtitleTimeout);
+    this.toastTimeout = null;
+    this.subtitleTimeout = null;
+    this.keys.clear();
     soundEngine.updateEngineSound(false, 0, 0);
     window.removeEventListener('keydown', this.handleKeyDown);
     window.removeEventListener('keyup', this.handleKeyUp);
@@ -2353,6 +2358,29 @@ export class GameEngine {
     this.renderer.domElement.removeEventListener('mousedown', this.handleMouseDown);
     window.removeEventListener('mousemove', this.handleMouseMove);
     window.removeEventListener('mouseup', this.handleMouseUp);
+
+    // Release scene GPU resources as well as the renderer itself. This matters
+    // when React remounts the simulator or the player restarts a scenario.
+    this.scene.traverse((object) => {
+      const renderable = object as THREE.Mesh;
+      if (renderable.geometry && typeof renderable.geometry.dispose === 'function') {
+        renderable.geometry.dispose();
+      }
+      const materials = Array.isArray(renderable.material)
+        ? renderable.material
+        : renderable.material
+        ? [renderable.material]
+        : [];
+      for (const material of materials) {
+        for (const value of Object.values(material)) {
+          if (value instanceof THREE.Texture) value.dispose();
+        }
+        material.dispose();
+      }
+    });
     this.renderer.dispose();
+    if (this.renderer.domElement.parentElement === this.container) {
+      this.container.removeChild(this.renderer.domElement);
+    }
   }
 }
