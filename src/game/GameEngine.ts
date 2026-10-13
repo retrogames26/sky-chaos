@@ -594,6 +594,18 @@ export class GameEngine {
       }
     }
 
+    // Cargo door is a physical interaction target on the aircraft's port-side rear hold.
+    consider(new THREE.Vector3(-2.05, 1.95, 12.8), 3.6, {
+      id: 'rear_cargo_door',
+      type: 'CARGO_DOOR',
+      prompt: this.telemetry.cargoDoorClosed
+        ? 'Press E to open rear cargo door'
+        : 'Press E to close and secure rear cargo door',
+      subPrompt: this.telemetry.cargoDoorClosed
+        ? 'Open the hold before loading baggage'
+        : 'Close the hold before departure',
+    });
+
     if (this.heldObject?.kind === 'CARGO') {
       consider(new THREE.Vector3(0, 2.0, 13.8), 3.8, {
         id: 'cargo_hold_hazmat',
@@ -1535,8 +1547,8 @@ export class GameEngine {
       6 * dt
     );
     const targetCargoRot = this.telemetry.cargoDoorClosed ? 0 : -1.2;
-    this.aircraft.cargoDoorPivot.rotation.z = THREE.MathUtils.lerp(
-      this.aircraft.cargoDoorPivot.rotation.z,
+    this.aircraft.cargoDoorPivot.rotation.y = THREE.MathUtils.lerp(
+      this.aircraft.cargoDoorPivot.rotation.y,
       targetCargoRot,
       6 * dt
     );
