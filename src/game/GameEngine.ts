@@ -1016,6 +1016,12 @@ export class GameEngine {
       this.telemetry.cargoDoorClosed = true;
     }
     this.telemetry.enginesRunning = true;
+    // The runway shortcut must leave the aircraft able to accelerate.
+    // Keeping the initial scenario's parking brake engaged makes net thrust
+    // negative and prevents the advertised quick-start takeoff from working.
+    this.telemetry.parkingBrake = false;
+    this.telemetry.brakesOn = false;
+    this.telemetry.throttlePct = 0;
     this.aircraft.root.position.set(45, 0, -55);
     this.aircraft.root.rotation.set(0, 0, 0);
     this.telemetry.headingDeg = 0;
