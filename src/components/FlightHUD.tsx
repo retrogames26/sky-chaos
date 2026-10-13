@@ -37,6 +37,7 @@ interface FlightHUDProps {
   onToggleGear?: () => void;
   onApplyBrakes?: (brakes: boolean) => void;
   onExitVehicle?: () => void;
+  onInteract?: () => void;
 }
 
 export const FlightHUD: React.FC<FlightHUDProps> = ({
@@ -57,6 +58,7 @@ export const FlightHUD: React.FC<FlightHUDProps> = ({
   onToggleGear,
   onApplyBrakes,
   onExitVehicle,
+  onInteract,
 }) => {
   const {
     controlMode,
@@ -355,8 +357,12 @@ export const FlightHUD: React.FC<FlightHUDProps> = ({
           </div>
 
           {interactionTarget && (
-            <div className="mt-6 rounded-xl border border-amber-400/70 bg-slate-950/95 px-5 py-2.5 text-center shadow-2xl backdrop-blur-md">
-              <div className="font-display text-sm font-bold text-amber-300 whitespace-nowrap">
+            <button
+              onClick={onInteract}
+              className="pointer-events-auto mt-6 rounded-xl border border-amber-400/70 bg-slate-950/95 px-5 py-2.5 text-center shadow-2xl backdrop-blur-md hover:bg-slate-900 active:scale-95 transition-all cursor-pointer group"
+              title="Click or press E to interact"
+            >
+              <div className="font-display text-sm font-bold text-amber-300 whitespace-nowrap group-hover:text-amber-200">
                 {interactionTarget.prompt}
               </div>
               {interactionTarget.subPrompt && (
@@ -364,7 +370,7 @@ export const FlightHUD: React.FC<FlightHUDProps> = ({
                   {interactionTarget.subPrompt}
                 </div>
               )}
-            </div>
+            </button>
           )}
         </div>
 

@@ -4,12 +4,15 @@ export interface AircraftParts {
   root: THREE.Group;
   cabinDoorPivot: THREE.Group;
   cargoDoorPivot: THREE.Group;
+  emergencyExitPivot: THREE.Group;
   boardingStairs: THREE.Group;
   landingGear: THREE.Group;
   leftFan: THREE.Group;
   rightFan: THREE.Group;
   leftFlap: THREE.Mesh;
   rightFlap: THREE.Mesh;
+  leftSpoiler: THREE.Mesh;
+  rightSpoiler: THREE.Mesh;
   leftAileron: THREE.Mesh;
   rightAileron: THREE.Mesh;
   leftElevator: THREE.Mesh;
@@ -21,6 +24,11 @@ export interface AircraftParts {
   avionicsSparkLight: THREE.PointLight;
   cabinLight: THREE.PointLight;
   cockpitLight: THREE.PointLight;
+  beaconLight: THREE.PointLight;
+  strobeLight: THREE.PointLight;
+  landingLightsGroup: THREE.Group;
+  navLightsGroup: THREE.Group;
+  parachuteLocker: THREE.Group;
 }
 
 export function buildPassengerAircraft(): AircraftParts {
@@ -433,6 +441,11 @@ export function buildPassengerAircraft(): AircraftParts {
   leftFlap.rotation.y = -0.22;
   leftWingGroup.add(leftFlap);
 
+  const leftSpoiler = new THREE.Mesh(new THREE.BoxGeometry(4.6, 0.08, 0.75), darkMetal);
+  leftSpoiler.position.set(-6.2, 1.68, 1.85);
+  leftSpoiler.rotation.y = -0.22;
+  leftWingGroup.add(leftSpoiler);
+
   const leftAileron = new THREE.Mesh(new THREE.BoxGeometry(4.2, 0.12, 0.65), darkMetal);
   leftAileron.position.set(-11.2, 1.65, 4.15);
   leftAileron.rotation.y = -0.22;
@@ -464,6 +477,11 @@ export function buildPassengerAircraft(): AircraftParts {
   rightFlap.position.set(5.2, 1.38, 2.95);
   rightFlap.rotation.y = 0.22;
   rightWingGroup.add(rightFlap);
+
+  const rightSpoiler = new THREE.Mesh(new THREE.BoxGeometry(4.6, 0.08, 0.75), darkMetal);
+  rightSpoiler.position.set(6.2, 1.68, 1.85);
+  rightSpoiler.rotation.y = 0.22;
+  rightWingGroup.add(rightSpoiler);
 
   const rightAileron = new THREE.Mesh(new THREE.BoxGeometry(4.2, 0.12, 0.65), darkMetal);
   rightAileron.position.set(11.2, 1.65, 4.15);
@@ -818,6 +836,86 @@ export function buildPassengerAircraft(): AircraftParts {
   cargoPad.position.set(0, 1.66, 13.9);
   root.add(cargoPad);
 
+  // Emergency Overwing Exit Door (Starboard side at z = 0.8)
+  const emergencyExitPivot = new THREE.Group();
+  emergencyExitPivot.position.set(1.82, 2.65, 0.8);
+  const emergencyExitDoor = new THREE.Mesh(new THREE.BoxGeometry(0.12, 1.45, 0.95), liveryAmber);
+  emergencyExitDoor.position.set(0, 0, 0.45);
+  emergencyExitPivot.add(emergencyExitDoor);
+  const exitSign = new THREE.Mesh(
+    new THREE.BoxGeometry(0.14, 0.16, 0.45),
+    new THREE.MeshBasicMaterial({ color: 0x10b981 })
+  );
+  exitSign.position.set(-0.06, 0.85, 0.45);
+  emergencyExitPivot.add(exitSign);
+  root.add(emergencyExitPivot);
+
+  // Parachute Locker Cabinet in Rear Cabin (Starboard/Port jumpseat wall at z = 8.5)
+  const parachuteLocker = new THREE.Group();
+  parachuteLocker.position.set(-1.62, 2.45, 8.5);
+  const lockerFrame = new THREE.Mesh(new THREE.BoxGeometry(0.24, 1.6, 1.4), darkMetal);
+  parachuteLocker.add(lockerFrame);
+  const lockerGlass = new THREE.Mesh(new THREE.BoxGeometry(0.04, 1.4, 1.2), cockpitGlass);
+  lockerGlass.position.x = 0.13;
+  parachuteLocker.add(lockerGlass);
+
+  // 4 Emergency Parachute Packs mounted inside
+  for (let p = 0; p < 4; p++) {
+    const pack = new THREE.Mesh(
+      new THREE.BoxGeometry(0.16, 0.34, 0.24),
+      new THREE.MeshStandardMaterial({ color: 0xf97316, roughness: 0.5 })
+    );
+    pack.position.set(0.04, -0.4 + (p % 2) * 0.45, -0.32 + Math.floor(p / 2) * 0.55);
+    parachuteLocker.add(pack);
+  }
+  const lockerStripe = new THREE.Mesh(
+    new THREE.BoxGeometry(0.26, 0.18, 1.2),
+    new THREE.MeshBasicMaterial({ color: 0xfacc15 })
+  );
+  lockerStripe.position.set(0, 0.65, 0);
+  parachuteLocker.add(lockerStripe);
+  root.add(parachuteLocker);
+
+  // Navigation, Beacon, Strobe, and Landing Lights
+  const navLightsGroup = new THREE.Group();
+  // Tail navigation white light
+  const tailNavLight = new THREE.Mesh(
+    new THREE.SphereGeometry(0.15, 8, 8),
+    new THREE.MeshBasicMaterial({ color: 0xffffff })
+  );
+  tailNavLight.position.set(0, 3.2, 22.8);
+  navLightsGroup.add(tailNavLight);
+  root.add(navLightsGroup);
+
+  // Red Rotating Beacon (Top and bottom of fuselage)
+  const beaconLight = new THREE.PointLight(0xef4444, 4.0, 18);
+  beaconLight.position.set(0, 4.75, 1.5);
+  root.add(beaconLight);
+
+  const beaconBelly = new THREE.PointLight(0xef4444, 3.0, 14);
+  beaconBelly.position.set(0, 0.65, 1.5);
+  beaconLight.add(beaconBelly);
+
+  // High-intensity wingtip Strobe Light
+  const strobeLight = new THREE.PointLight(0xffffff, 0, 35);
+  strobeLight.position.set(0, 2.5, 2.5);
+  root.add(strobeLight);
+
+  // Forward Landing Lights
+  const landingLightsGroup = new THREE.Group();
+  const noseSpotL = new THREE.SpotLight(0xfffbeb, 6.0, 120, Math.PI / 6, 0.45);
+  noseSpotL.position.set(-0.35, 1.1, -15.2);
+  noseSpotL.target.position.set(0, 0, -85);
+  landingLightsGroup.add(noseSpotL);
+  landingLightsGroup.add(noseSpotL.target);
+
+  const noseSpotR = new THREE.SpotLight(0xfffbeb, 6.0, 120, Math.PI / 6, 0.45);
+  noseSpotR.position.set(0.35, 1.1, -15.2);
+  noseSpotR.target.position.set(0, 0, -85);
+  landingLightsGroup.add(noseSpotR);
+  landingLightsGroup.add(noseSpotR.target);
+  root.add(landingLightsGroup);
+
   const cabinLight = new THREE.PointLight(0xfffbeb, 1.4, 24);
   cabinLight.position.set(0, 3.65, -1.0);
   root.add(cabinLight);
@@ -834,12 +932,15 @@ export function buildPassengerAircraft(): AircraftParts {
     root,
     cabinDoorPivot,
     cargoDoorPivot,
+    emergencyExitPivot,
     boardingStairs,
     landingGear,
     leftFan,
     rightFan,
     leftFlap,
     rightFlap,
+    leftSpoiler,
+    rightSpoiler,
     leftAileron,
     rightAileron,
     leftElevator,
@@ -851,5 +952,83 @@ export function buildPassengerAircraft(): AircraftParts {
     avionicsSparkLight,
     cabinLight,
     cockpitLight,
+    beaconLight,
+    strobeLight,
+    landingLightsGroup,
+    navLightsGroup,
+    parachuteLocker,
   };
+}
+
+export function createParachuteBackpackMesh(): THREE.Group {
+  const grp = new THREE.Group();
+  grp.name = 'WearableParachuteBackpack';
+
+  const packMat = new THREE.MeshStandardMaterial({
+    color: 0xf97316,
+    roughness: 0.5,
+    metalness: 0.1,
+  });
+  const pack = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.44, 0.18), packMat);
+  pack.castShadow = true;
+  grp.add(pack);
+
+  const cordMat = new THREE.MeshStandardMaterial({ color: 0xfacc15, roughness: 0.3 });
+  const cord = new THREE.Mesh(new THREE.TorusGeometry(0.05, 0.015, 8, 12), cordMat);
+  cord.position.set(-0.14, 0.1, 0.1);
+  grp.add(cord);
+
+  const strapMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.9 });
+  for (const sx of [-0.12, 0.12]) {
+    const strap = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.46, 0.03), strapMat);
+    strap.position.set(sx, 0, -0.1);
+    grp.add(strap);
+  }
+  return grp;
+}
+
+export function createDeployedCanopyMesh(): THREE.Group {
+  const grp = new THREE.Group();
+  grp.name = 'DeployedParachuteCanopy';
+
+  const canopyMat = new THREE.MeshStandardMaterial({
+    color: 0xf97316,
+    roughness: 0.6,
+    side: THREE.DoubleSide,
+  });
+  const canopyGeo = new THREE.SphereGeometry(3.4, 20, 12, 0, Math.PI * 2, 0, Math.PI * 0.42);
+  const canopy = new THREE.Mesh(canopyGeo, canopyMat);
+  canopy.position.y = 4.8;
+  grp.add(canopy);
+
+  const stripeMat = new THREE.MeshStandardMaterial({
+    color: 0xffffff,
+    roughness: 0.5,
+    side: THREE.DoubleSide,
+  });
+  const stripeGeo = new THREE.SphereGeometry(3.42, 8, 12, 0, Math.PI * 0.5, 0, Math.PI * 0.42);
+  const stripe = new THREE.Mesh(stripeGeo, stripeMat);
+  stripe.position.y = 4.8;
+  grp.add(stripe);
+
+  const lineMat = new THREE.LineBasicMaterial({
+    color: 0xe2e8f0,
+    opacity: 0.85,
+    transparent: true,
+  });
+  for (let i = 0; i < 8; i++) {
+    const angle = (i * Math.PI) / 4;
+    const rimX = Math.cos(angle) * 3.2;
+    const rimZ = Math.sin(angle) * 3.2;
+    const rimY = 4.8 - Math.sin(Math.PI * 0.42) * 1.1;
+
+    const points = [
+      new THREE.Vector3(rimX, rimY, rimZ),
+      new THREE.Vector3(0, 0.2, 0),
+    ];
+    const lineGeo = new THREE.BufferGeometry().setFromPoints(points);
+    const line = new THREE.Line(lineGeo, lineMat);
+    grp.add(line);
+  }
+  return grp;
 }

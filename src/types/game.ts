@@ -2,7 +2,8 @@ export type PlayerControlMode =
   | 'ON_FOOT'
   | 'IN_COCKPIT'
   | 'DRIVING_TUG'
-  | 'DRIVING_FUEL_TRUCK';
+  | 'DRIVING_FUEL_TRUCK'
+  | 'SKYDIVING';
 
 export type FlightPhase =
   | 'PREFLIGHT'
@@ -14,7 +15,13 @@ export type FlightPhase =
   | 'FLIGHT_COMPLETE'
   | 'FLIGHT_FAILED';
 
-export type CrewRole = 'PILOT' | 'COPILOT' | 'CABIN_CREW' | 'GROUND_CREW';
+export type CrewRole =
+  | 'PILOT'
+  | 'COPILOT'
+  | 'CABIN_CREW'
+  | 'GROUND_CREW'
+  | 'BAGGAGE_HANDLER'
+  | 'FUEL_OPERATOR';
 
 export interface LobbyMember {
   playerId: string;
@@ -125,6 +132,9 @@ export interface AircraftTelemetry {
   gearDown: boolean;
   flapsDeg: 0 | 15 | 30;
   brakesOn: boolean;
+  parkingBrake: boolean;
+  spoilersExtended: boolean;
+  reverseThrust: boolean;
   cabinDoorClosed: boolean;
   cargoDoorClosed: boolean;
   enginesRunning: boolean;
@@ -133,12 +143,28 @@ export interface AircraftTelemetry {
   lateralOffsetMeters: number;
   onGround: boolean;
   inTurbulence: boolean;
-  cameraView: 'COCKPIT' | 'CHASE' | 'WING';
+  cameraView: 'COCKPIT' | 'CABIN' | 'CHASE' | 'ORBIT';
   autopilotHold: boolean;
+  navLights: boolean;
+  beaconLights: boolean;
+  strobeLights: boolean;
+  landingLights: boolean;
+  cabinLights: boolean;
+  radioFreq: string;
+}
+
+export interface SkydivingState {
+  position: { x: number; y: number; z: number };
+  velocity: { x: number; y: number; z: number };
+  yaw: number;
+  pitch: number;
+  parachuteDeployed: boolean;
+  landed: boolean;
+  landingReport?: string;
 }
 
 export interface HeldObjectInfo {
-  kind: 'LUGGAGE' | 'CARGO' | 'MEAL' | 'CLEANER' | 'EXTINGUISHER';
+  kind: 'LUGGAGE' | 'CARGO' | 'MEAL' | 'CLEANER' | 'EXTINGUISHER' | 'PARACHUTE';
   id: string;
   label: string;
   mealType?: MealType;
@@ -164,7 +190,10 @@ export interface InteractionTarget {
     | 'ENGINE_START_SWITCH'
     | 'DRIVE_TUG'
     | 'FUEL_TRUCK'
-    | 'TOW_LUGGAGE';
+    | 'TOW_LUGGAGE'
+    | 'PARACHUTE_LOCKER'
+    | 'EMERGENCY_EXIT'
+    | 'COCKPIT_CONTROLS';
   prompt: string;
   subPrompt?: string;
   distance: number;

@@ -15,8 +15,14 @@ import {
   PeerPlayer,
   PlayerControlMode,
   PreflightChecklistState,
+  SkydivingState,
 } from '../types/game';
-import { AircraftParts, buildPassengerAircraft } from './AircraftBuilder';
+import {
+  AircraftParts,
+  buildPassengerAircraft,
+  createDeployedCanopyMesh,
+  createParachuteBackpackMesh,
+} from './AircraftBuilder';
 import { ANNOUNCEMENT_OPTIONS, createInitialScenario } from './GameCatalog';
 import { PhysicsWorld, PlayerPhysicsState, VehiclePhysicsState } from './PhysicsWorld';
 import { buildAirportAndFlightWorld, WorldObjects } from './WorldBuilder';
@@ -39,8 +45,10 @@ export interface GameUIStateSnapshot {
   showManifestModal: boolean;
   showAnnouncementMenu: boolean;
   showGalleyMenu: boolean;
+  showControlsDrawer: boolean;
   pointerLocked: boolean;
   peers: PeerPlayer[];
+  skydiving: SkydivingState | null;
 }
 
 export class GameEngine {
@@ -104,6 +112,14 @@ export class GameEngine {
   private showManifestModal: boolean = false;
   private showAnnouncementMenu: boolean = false;
   private showGalleyMenu: boolean = false;
+  private showControlsDrawer: boolean = false;
+  private skydivingState: SkydivingState | null = null;
+  private skydiveCanopyMesh: THREE.Group | null = null;
+  private skydiveBodyMesh: THREE.Group | null = null;
+  private chaseCameraPos: THREE.Vector3 = new THREE.Vector3(45, 12, 50);
+  private orbitYaw: number = 0;
+  private orbitPitch: number = 0.28;
+  private orbitDist: number = 42;
 
   private keys: Set<string> = new Set();
   private pointerLocked: boolean = false;
@@ -219,6 +235,9 @@ export class GameEngine {
       gearDown: true,
       flapsDeg: 15,
       brakesOn: false,
+      parkingBrake: true,
+      spoilersExtended: false,
+      reverseThrust: false,
       cabinDoorClosed: false,
       cargoDoorClosed: false,
       enginesRunning: false,
@@ -229,6 +248,12 @@ export class GameEngine {
       inTurbulence: false,
       cameraView: 'COCKPIT',
       autopilotHold: true,
+      navLights: true,
+      beaconLights: false,
+      strobeLights: false,
+      landingLights: false,
+      cabinLights: true,
+      radioFreq: '118.70',
     };
   }
 
@@ -603,6 +628,43 @@ export class GameEngine {
       type: 'PA_SYSTEM',
       prompt: 'Press E to make Cabin PA Announcement',
       subPrompt: 'Broadcast boarding, seatbelt, turbulence, or landing notice',
+    });
+
+    consider(new THREE.Vector3(-1.62, 2.45, 8.5), 3.2, {
+      id: 'parachute_locker',
+      type: 'PARACHUTE_LOCKER',
+      prompt: this.heldObject?.kind === 'PARACHUTE'
+        ? 'Press E to return Parachute to Cabin Emergency Locker'
+        : 'Press E to equip Emergency Parachute Backpack (Aerosport T-10)',
+      subPrompt: 'Emergency crew bailout gear for in-flight crises',
+    });
+
+    if (!this.telemetry.onGround && this.telemetry.altitudeFt > 120) {
+      consider(new THREE.Vector3(1.75, 2.5, 0.8), 3.4, {
+        id: 'emergency_exit_starboard',
+        type: 'EMERGENCY_EXIT',
+        prompt: this.heldObject?.kind === 'PARACHUTE'
+          ? 'Press E to BAIL OUT with Parachute! (Emergency Skydive)'
+          : 'Press E: WARNING - No parachute equipped!',
+        subPrompt: 'Overwing emergency jump exit',
+      });
+      if (!this.telemetry.cabinDoorClosed) {
+        consider(new THREE.Vector3(-1.75, 2.35, -9.5), 3.4, {
+          id: 'emergency_exit_forward',
+          type: 'EMERGENCY_EXIT',
+          prompt: this.heldObject?.kind === 'PARACHUTE'
+            ? 'Press E to BAIL OUT with Parachute! (Emergency Skydive)'
+            : 'Press E: WARNING - No parachute equipped!',
+          subPrompt: 'Forward cabin jump exit',
+        });
+      }
+    }
+
+    consider(new THREE.Vector3(0, 2.2, -15.6), 2.8, {
+      id: 'cockpit_controls_panel',
+      type: 'COCKPIT_CONTROLS',
+      prompt: 'Press E to open Flight Controls & Systems Panel',
+      subPrompt: 'Interactive switches for lights, spoilers, parking brake, and radio',
     });
 
     for (const mess of this.messes) {
@@ -1991,6 +2053,24 @@ export class GameEngine {
     ) {
       return;
     }
+    if (e.button === 0 && !this.pointerLocked && this.container) {
+      const rect = this.renderer.domElement.getBoundingClientRect();
+      const mouseNorm = new THREE.Vector2(
+        ((e.clientX - rect.left) / rect.width) * 2 - 1,
+        -((e.clientY - rect.top) / rect.height) * 2 + 1
+      );
+      const raycaster = new THREE.Raycaster();
+      raycaster.setFromCamera(mouseNorm, this.camera);
+      for (const [paxId, paxRef] of this.passengerMeshes.entries()) {
+        const hits = raycaster.intersectObjects(paxRef.group.children, true);
+        if (hits.length > 0 && hits[0].distance < 4.5) {
+          this.interactWithPassenger(paxId);
+          this.emitUIState();
+          return;
+        }
+      }
+    }
+
     this.isDraggingLook = true;
     this.lastMouseX = e.clientX;
     this.lastMouseY = e.clientY;
@@ -2188,8 +2268,10 @@ export class GameEngine {
       showManifestModal: this.showManifestModal,
       showAnnouncementMenu: this.showAnnouncementMenu,
       showGalleyMenu: this.showGalleyMenu,
+      showControlsDrawer: this.showControlsDrawer,
       pointerLocked: this.pointerLocked,
       peers: Array.from(this.peers.values()),
+      skydiving: this.skydivingState ? { ...this.skydivingState } : null,
     });
   }
 

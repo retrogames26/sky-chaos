@@ -3,6 +3,7 @@ import {
   AircraftTelemetry,
   FlightPhase,
   LuggageItem,
+  SkydivingState,
 } from '../types/game';
 
 export interface PlayerPhysicsState {
@@ -261,23 +262,30 @@ export class PhysicsWorld {
     // 2. Thrust, Drag, Acceleration
     // Max thrust acceleration tuned for realistic Boeing 737 / Airbus A320 profile
     const thrustPower = (telemetry.throttlePct / 100);
-    const maxThrustAccel = telemetry.enginesRunning ? thrustPower * 42.0 : 0;
+    let engineThrustAccel = telemetry.enginesRunning ? thrustPower * 42.0 : 0;
+    if (telemetry.reverseThrust && telemetry.enginesRunning && telemetry.onGround) {
+      engineThrustAccel = -32.0; // Reverse thrust deceleration
+    }
 
     const flapDrag = telemetry.flapsDeg === 30 ? 5.5 : telemetry.flapsDeg === 15 ? 2.2 : 0.0;
+    const spoilerDrag = telemetry.spoilersExtended ? 14.5 : 0.0;
     const gearDrag = telemetry.gearDown ? 3.0 : 0.4;
-    const aeroDrag = (telemetry.airspeedKts * telemetry.airspeedKts) * 0.00048 + flapDrag + gearDrag;
-    const brakeDecel = telemetry.onGround && telemetry.brakesOn ? 42.0 : 0;
-    const groundRollingResistance = telemetry.onGround && !telemetry.brakesOn ? 3.5 : 0;
+    const aeroDrag = (telemetry.airspeedKts * telemetry.airspeedKts) * 0.00048 + flapDrag + gearDrag + spoilerDrag;
+    const brakeDecel = telemetry.onGround && (telemetry.brakesOn || telemetry.parkingBrake) ? 45.0 : 0;
+    const groundRollingResistance = telemetry.onGround && !telemetry.brakesOn && !telemetry.parkingBrake ? 3.5 : 0;
     const pitchGravityAccel = -Math.sin(THREE.MathUtils.degToRad(telemetry.pitchDeg)) * 14.0;
 
     const netAccelKts =
-      maxThrustAccel -
+      engineThrustAccel -
       aeroDrag -
       brakeDecel -
       groundRollingResistance +
       (telemetry.onGround ? 0 : pitchGravityAccel);
 
     telemetry.airspeedKts = Math.max(0, Math.min(310, telemetry.airspeedKts + netAccelKts * clampedDt));
+    if (telemetry.onGround && telemetry.parkingBrake && !telemetry.reverseThrust && telemetry.throttlePct <= 10) {
+      telemetry.airspeedKts = Math.max(0, telemetry.airspeedKts - 60 * clampedDt);
+    }
 
     // 3. Ground handling vs airborne handling
     const yawPedal = controls.yawInput || 0;
@@ -466,5 +474,66 @@ export class PhysicsWorld {
     }
 
     return { nextPhase, touchdownEvent };
+  }
+
+  public updateSkydivingPhysics(
+    dt: number,
+    state: SkydivingState,
+    input: { forward: number; right: number; deployChute: boolean }
+  ) {
+    const clampedDt = Math.min(dt, 0.05);
+
+    if (state.landed) {
+      state.velocity.x = 0;
+      state.velocity.y = 0;
+      state.velocity.z = 0;
+      state.position.y = 0;
+      return;
+    }
+
+    if (input.deployChute && !state.parachuteDeployed && state.position.y > 5.0) {
+      state.parachuteDeployed = true;
+    }
+
+    // Steering turn
+    state.yaw -= input.right * 1.8 * clampedDt;
+
+    // Aerodynamic terminal velocities
+    // Freefall terminal sink: ~ -48 m/s
+    // Open canopy terminal sink: ~ -4.8 m/s
+    const targetTerminalSink = state.parachuteDeployed ? -4.8 : -48.0;
+    const gravity = -9.8;
+
+    state.velocity.y += gravity * clampedDt;
+    state.velocity.y = THREE.MathUtils.lerp(state.velocity.y, targetTerminalSink, (state.parachuteDeployed ? 4.5 : 0.8) * clampedDt);
+
+    // Forward glide speed
+    const forwardSpeed = state.parachuteDeployed
+      ? (input.forward > 0 ? 11.0 : input.forward < 0 ? 3.0 : 7.0)
+      : (input.forward > 0 ? 24.0 : 8.0);
+
+    const fwdX = -Math.sin(state.yaw) * forwardSpeed;
+    const fwdZ = -Math.cos(state.yaw) * forwardSpeed;
+
+    state.velocity.x = THREE.MathUtils.lerp(state.velocity.x, fwdX, 3.0 * clampedDt);
+    state.velocity.z = THREE.MathUtils.lerp(state.velocity.z, fwdZ, 3.0 * clampedDt);
+
+    state.position.x += state.velocity.x * clampedDt;
+    state.position.z += state.velocity.z * clampedDt;
+    state.position.y += state.velocity.y * clampedDt;
+
+    // Touchdown on terrain
+    if (state.position.y <= 0) {
+      state.position.y = 0;
+      state.landed = true;
+      state.velocity.x = 0;
+      state.velocity.y = 0;
+      state.velocity.z = 0;
+
+      const safeLanding = state.parachuteDeployed;
+      state.landingReport = safeLanding
+        ? 'Emergency Parachute Bailout SUCCESSFUL! Touched down safely on airport terrain.'
+        : 'CATASTROPHIC BAILOUT! Forgot to deploy parachute before hitting the terrain!';
+    }
   }
 }

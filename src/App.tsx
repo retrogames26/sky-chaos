@@ -193,6 +193,7 @@ export function App() {
           onToggleGear={() => engineRef.current?.toggleLandingGear()}
           onApplyBrakes={(brakes) => engineRef.current?.applyWheelBrakes(brakes)}
           onExitVehicle={() => engineRef.current?.triggerInteractKeyE()}
+          onInteract={() => engineRef.current?.triggerInteractKeyE()}
         />
       )}
 
