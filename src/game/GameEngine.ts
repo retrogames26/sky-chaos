@@ -40,6 +40,7 @@ export interface GameUIStateSnapshot {
   showAnnouncementMenu: boolean;
   showGalleyMenu: boolean;
   pointerLocked: boolean;
+  playerInsideCabin: boolean;
   peers: PeerPlayer[];
 }
 
@@ -1866,6 +1867,7 @@ export class GameEngine {
       showAnnouncementMenu: this.showAnnouncementMenu,
       showGalleyMenu: this.showGalleyMenu,
       pointerLocked: this.pointerLocked,
+      playerInsideCabin: this.player.insideCabin,
       peers: Array.from(this.peers.values()),
     });
   }

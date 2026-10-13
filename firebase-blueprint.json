@@ -1,0 +1,127 @@
+{
+  "entities": {
+    "PilotProfile": {
+      "title": "Pilot Profile",
+      "description": "User pilot career stats, cash, xp, unlocked aircraft upgrades and achievements",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "description": "The user's unique Firebase auth ID"
+        },
+        "callsign": {
+          "type": "string",
+          "description": "Pilot callsign name",
+          "maxLength": 50
+        },
+        "cash": {
+          "type": "number",
+          "description": "Accumulated airline cash balance"
+        },
+        "xp": {
+          "type": "number",
+          "description": "Accumulated pilot experience points"
+        },
+        "level": {
+          "type": "number",
+          "description": "Pilot rank level"
+        },
+        "flightsCompleted": {
+          "type": "number",
+          "description": "Total flights finished"
+        },
+        "avgRating": {
+          "type": "number",
+          "description": "Average passenger satisfaction rating"
+        },
+        "unlockedUpgrades": {
+          "type": "array",
+          "description": "Purchased aircraft upgrade IDs"
+        },
+        "unlockedAchievements": {
+          "type": "array",
+          "description": "Earned achievement badge IDs"
+        },
+        "updatedAt": {
+          "type": "string",
+          "description": "ISO or server timestamp of last update"
+        }
+      },
+      "required": [
+        "uid",
+        "callsign",
+        "cash",
+        "xp",
+        "level",
+        "flightsCompleted",
+        "avgRating"
+      ]
+    },
+    "FlightReport": {
+      "title": "Flight Debrief Report",
+      "description": "Log of completed flights with earnings, hazards handled and ratings",
+      "type": "object",
+      "properties": {
+        "reportId": {
+          "type": "string",
+          "description": "Unique report ID"
+        },
+        "userId": {
+          "type": "string",
+          "description": "User auth UID who completed the flight"
+        },
+        "routeId": {
+          "type": "string",
+          "description": "Flight route code"
+        },
+        "routeName": {
+          "type": "string",
+          "description": "Full route title",
+          "maxLength": 100
+        },
+        "passengersServed": {
+          "type": "number",
+          "description": "Total passenger count"
+        },
+        "passengerRating": {
+          "type": "number",
+          "description": "Satisfaction score out of 5.0"
+        },
+        "cashEarned": {
+          "type": "number",
+          "description": "Net cash payout"
+        },
+        "xpEarned": {
+          "type": "number",
+          "description": "Net XP awarded"
+        },
+        "hazardsPrevented": {
+          "type": "number",
+          "description": "Number of incidents and hazards resolved"
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "Timestamp of debrief creation"
+        }
+      },
+      "required": [
+        "reportId",
+        "userId",
+        "routeId",
+        "routeName",
+        "cashEarned",
+        "xpEarned"
+      ]
+    }
+  },
+  "firestore": {
+    "/pilot_profiles/{userId}": {
+      "schema": "PilotProfile",
+      "description": "Stores user pilot career stats, money, and unlocked perks"
+    },
+    "/flight_reports/{reportId}": {
+      "schema": "FlightReport",
+      "description": "Log of debriefed flights for pilots"
+    }
+  }
+}

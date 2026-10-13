@@ -46,6 +46,8 @@ interface ModalsProps {
   onVolumeChange: (vol: number) => void;
   onToggleMute: () => void;
   onDismissDebrief: () => void;
+  onGoogleSignIn?: () => Promise<void>;
+  onSignOut?: () => Promise<void>;
 }
 
 export const ModalsAndMenus: React.FC<ModalsProps> = ({
@@ -70,6 +72,8 @@ export const ModalsAndMenus: React.FC<ModalsProps> = ({
   onVolumeChange,
   onToggleMute,
   onDismissDebrief,
+  onGoogleSignIn,
+  onSignOut,
 }) => {
   const [hangarTab, setHangarTab] = useState<'ROUTES' | 'UPGRADES' | 'ACHIEVEMENTS' | 'COOP'>('ROUTES');
   const [callsignDraft, setCallsignDraft] = useState(profile.callsign);
@@ -482,8 +486,27 @@ export const ModalsAndMenus: React.FC<ModalsProps> = ({
             </div>
           </div>
 
-          <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-white/10 bg-slate-950 px-3.5 py-2 text-xs text-slate-300">
-            <span>{firebaseStatus.message}</span>
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-white/10 bg-slate-950 px-3.5 py-2.5 text-xs text-slate-300">
+            <div className="flex items-center gap-2">
+              <span className="inline-block h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
+              <span className="text-slate-300 font-mono text-[11px]">{firebaseStatus.message}</span>
+              {onGoogleSignIn && profile.uid.startsWith('pilot_guest') && (
+                <button
+                  onClick={() => onGoogleSignIn()}
+                  className="ml-2 flex items-center gap-1.5 rounded bg-amber-500/20 border border-amber-500/40 px-2.5 py-1 text-[11px] font-semibold text-amber-300 hover:bg-amber-500 hover:text-slate-950 transition-colors"
+                >
+                  Sign In with Google
+                </button>
+              )}
+              {onSignOut && !profile.uid.startsWith('pilot_guest') && (
+                <button
+                  onClick={() => onSignOut()}
+                  className="ml-2 rounded border border-white/20 bg-white/5 px-2 py-0.5 text-[10px] text-slate-400 hover:bg-white/15 hover:text-white transition-colors"
+                >
+                  Sign Out
+                </button>
+              )}
+            </div>
             <div className="flex items-center gap-2">
               <input
                 type="text"

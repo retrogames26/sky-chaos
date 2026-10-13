@@ -1,12 +1,21 @@
-import { initializeApp, FirebaseApp } from 'firebase/app';
-import { getAuth, signInAnonymously, Auth } from 'firebase/auth';
-import { getFirestore, doc, getDoc, setDoc, Firestore } from 'firebase/firestore';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
+import {
+  auth,
+  db,
+  handleFirestoreError,
+  loginWithGoogle,
+  logoutUser,
+  onAuthStateChanged,
+  OperationType,
+  testFirestoreConnection,
+  User,
+} from './firebase';
 import { DebriefReport, PlayerProfile } from '../types/game';
 
 const LOCAL_STORAGE_KEY = 'sky_chaos_pilot_profile_v1';
 
 const DEFAULT_PROFILE: PlayerProfile = {
-  uid: 'pilot_local_01',
+  uid: 'pilot_guest_01',
   callsign: 'CAPT. MAVERICK-ISH',
   cash: 1500,
   xp: 0,
@@ -15,84 +24,87 @@ const DEFAULT_PROFILE: PlayerProfile = {
   avgRating: 5.0,
   unlockedUpgrades: [],
   unlockedAchievements: [],
-  authMode: 'LOCAL_SERVER',
+  authMode: 'FIREBASE',
 };
 
 class ProgressionService {
-  private firebaseApp: FirebaseApp | null = null;
-  private auth: Auth | null = null;
-  private db: Firestore | null = null;
-  private isFirebaseConfigured = false;
+  private currentUser: User | null = null;
+  private isConnected = false;
 
   constructor() {
-    this.initFirebaseIfConfigured();
+    this.init();
   }
 
-  private initFirebaseIfConfigured() {
-    const apiKey = import.meta.env.VITE_FIREBASE_API_KEY;
-    const projectId = import.meta.env.VITE_FIREBASE_PROJECT_ID;
-    if (apiKey && projectId && apiKey.length > 5) {
-      try {
-        this.firebaseApp = initializeApp({
-          apiKey,
-          authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || `${projectId}.firebaseapp.com`,
-          projectId,
-          storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || '',
-          messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || '',
-          appId: import.meta.env.VITE_FIREBASE_APP_ID || '',
-        });
-        this.auth = getAuth(this.firebaseApp);
-        this.db = getFirestore(this.firebaseApp);
-        this.isFirebaseConfigured = true;
-      } catch {
-        this.isFirebaseConfigured = false;
+  private async init() {
+    this.isConnected = await testFirestoreConnection();
+    onAuthStateChanged(auth, async (user) => {
+      this.currentUser = user;
+      if (user) {
+        await this.syncProfileForUser(user);
       }
-    }
+    });
   }
 
-  public getFirebaseStatusMessage(): { configured: boolean; message: string } {
-    if (this.isFirebaseConfigured) {
+  public getFirebaseStatusMessage(): { configured: boolean; message: string; userEmail?: string } {
+    if (this.currentUser) {
       return {
         configured: true,
-        message: 'Connected to Firebase Auth & Cloud Firestore + Server Reward Validator',
+        message: `Connected to Cloud Firestore. Logged in as ${this.currentUser.displayName || this.currentUser.email}`,
+        userEmail: this.currentUser.email || undefined,
       };
     }
     return {
-      configured: false,
-      message:
-        'Local Development Mode Active (Authoritative Express API + Local Storage). Set VITE_FIREBASE_* in .env to enable Cloud Firestore sync.',
+      configured: true,
+      message: 'Cloud Firestore connected. Sign in with Google to sync pilot career across devices.',
     };
   }
 
-  public async loadProfile(): Promise<PlayerProfile> {
-    try {
-      const res = await fetch('/api/profile');
-      if (res.ok) {
-        const serverProfile = (await res.json()) as PlayerProfile;
-        if (this.isFirebaseConfigured && this.auth && this.db) {
-          const cred = await signInAnonymously(this.auth);
-          const ref = doc(this.db, 'pilot_profiles', cred.user.uid);
-          const snap = await getDoc(ref);
-          if (snap.exists()) {
-            const cloudData = snap.data() as PlayerProfile;
-            return { ...cloudData, authMode: 'FIREBASE' };
-          } else {
-            const initialized: PlayerProfile = {
-              ...serverProfile,
-              uid: cred.user.uid,
-              authMode: 'FIREBASE',
-            };
-            await setDoc(ref, initialized);
-            return initialized;
-          }
-        }
-        localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(serverProfile));
-        return serverProfile;
-      }
-    } catch {
-      // ignore
-    }
+  public async signInGoogle(): Promise<PlayerProfile> {
+    const user = await loginWithGoogle();
+    this.currentUser = user;
+    return await this.syncProfileForUser(user);
+  }
 
+  public async signOut(): Promise<void> {
+    await logoutUser();
+    this.currentUser = null;
+  }
+
+  public getCurrentUser(): User | null {
+    return this.currentUser;
+  }
+
+  private async syncProfileForUser(user: User): Promise<PlayerProfile> {
+    const docPath = `pilot_profiles/${user.uid}`;
+    try {
+      const snap = await getDoc(doc(db, 'pilot_profiles', user.uid));
+      if (snap.exists()) {
+        const cloudData = snap.data() as PlayerProfile;
+        const profile: PlayerProfile = {
+          ...cloudData,
+          uid: user.uid,
+          authMode: 'FIREBASE',
+        };
+        localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(profile));
+        return profile;
+      } else {
+        const currentLocal = this.getLocalProfile();
+        const initialProfile: PlayerProfile = {
+          ...currentLocal,
+          uid: user.uid,
+          callsign: user.displayName?.toUpperCase().slice(0, 20) || currentLocal.callsign,
+          authMode: 'FIREBASE',
+        };
+        await setDoc(doc(db, 'pilot_profiles', user.uid), initialProfile);
+        localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(initialProfile));
+        return initialProfile;
+      }
+    } catch (err) {
+      handleFirestoreError(err, OperationType.GET, docPath);
+    }
+  }
+
+  public getLocalProfile(): PlayerProfile {
     const raw = localStorage.getItem(LOCAL_STORAGE_KEY);
     if (raw) {
       try {
@@ -104,25 +116,52 @@ class ProgressionService {
     return { ...DEFAULT_PROFILE };
   }
 
+  public async loadProfile(): Promise<PlayerProfile> {
+    if (this.currentUser) {
+      const docPath = `pilot_profiles/${this.currentUser.uid}`;
+      try {
+        const snap = await getDoc(doc(db, 'pilot_profiles', this.currentUser.uid));
+        if (snap.exists()) {
+          const cloudData = snap.data() as PlayerProfile;
+          const profile = { ...cloudData, uid: this.currentUser.uid, authMode: 'FIREBASE' as const };
+          localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(profile));
+          return profile;
+        }
+      } catch (err) {
+        handleFirestoreError(err, OperationType.GET, docPath);
+      }
+    }
+
+    try {
+      const res = await fetch('/api/profile');
+      if (res.ok) {
+        const serverProfile = (await res.json()) as PlayerProfile;
+        localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(serverProfile));
+        return serverProfile;
+      }
+    } catch {
+      // ignore
+    }
+
+    return this.getLocalProfile();
+  }
+
   public async updateCallsign(callsign: string): Promise<PlayerProfile> {
     const clean = callsign.trim().slice(0, 24) || 'CAPT. CHAOS';
+    const current = await this.loadProfile();
+    const updated = { ...current, callsign: clean };
+
     try {
-      const res = await fetch('/api/profile/callsign', {
+      await fetch('/api/profile/callsign', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ callsign: clean }),
       });
-      if (res.ok) {
-        const updated = (await res.json()) as PlayerProfile;
-        await this.syncToCloudAndLocal(updated);
-        return updated;
-      }
     } catch {
-      // fallback
+      // ignore
     }
-    const current = await this.loadProfile();
-    const updated = { ...current, callsign: clean };
-    await this.syncToCloudAndLocal(updated);
+
+    await this.saveProfile(updated);
     return updated;
   }
 
@@ -142,6 +181,9 @@ class ProgressionService {
     airframeHealth: number;
     passengerSatisfactionPct: number;
   }): Promise<{ profile: PlayerProfile; report: DebriefReport }> {
+    let profile: PlayerProfile | null = null;
+    let report: DebriefReport | null = null;
+
     try {
       const res = await fetch('/api/flight-complete', {
         method: 'POST',
@@ -150,119 +192,143 @@ class ProgressionService {
       });
       if (res.ok) {
         const data = (await res.json()) as { profile: PlayerProfile; report: DebriefReport };
-        await this.syncToCloudAndLocal(data.profile);
-        return data;
+        profile = data.profile;
+        report = data.report;
       }
     } catch {
-      // Fallback
+      // ignore
     }
 
-    const current = await this.loadProfile();
-    const baseFlightReward = payload.outcome === 'CRASHED' ? 150 : 1200;
-    const luggageBonus = payload.luggageLoadedCount * 85;
-    const ticketAccuracyBonus = payload.ticketsAccurateCount * 70;
-    const hazardousCargoBonus =
-      payload.outcome === 'CRASHED' ? 0 : payload.hazardousCargoIntactCount * 410;
-    const mealServiceBonus = payload.mealsServedCount * 65;
-    const cleanlinessBonus = Math.round(payload.cleanlinessPct * 2.5);
-    const incidentHandlingBonus = payload.incidentsResolvedCount * 220;
-    const unsecuredPenalty = (payload.luggageTotalCount - payload.luggageLoadedCount) * 110;
-    const damagePenalty = Math.round((100 - payload.airframeHealth) * 14);
+    if (!profile || !report) {
+      const current = await this.loadProfile();
+      const baseFlightReward = payload.outcome === 'CRASHED' ? 150 : 1200;
+      const luggageBonus = payload.luggageLoadedCount * 85;
+      const ticketAccuracyBonus = payload.ticketsAccurateCount * 70;
+      const hazardousCargoBonus =
+        payload.outcome === 'CRASHED' ? 0 : payload.hazardousCargoIntactCount * 410;
+      const mealServiceBonus = payload.mealsServedCount * 65;
+      const cleanlinessBonus = Math.round(payload.cleanlinessPct * 2.5);
+      const incidentHandlingBonus = payload.incidentsResolvedCount * 220;
+      const unsecuredPenalty = (payload.luggageTotalCount - payload.luggageLoadedCount) * 110;
+      const damagePenalty = Math.round((100 - payload.airframeHealth) * 14);
 
-    const totalCashEarned = Math.max(
-      100,
-      baseFlightReward +
-        luggageBonus +
-        ticketAccuracyBonus +
-        hazardousCargoBonus +
-        mealServiceBonus +
-        cleanlinessBonus +
-        incidentHandlingBonus -
-        unsecuredPenalty -
-        damagePenalty
-    );
-    const xpEarned = Math.round(totalCashEarned * 0.45);
-    const starRating =
-      payload.outcome === 'CRASHED'
-        ? 1.5
-        : Number(
-            Math.min(
-              5,
-              Math.max(
-                1,
-                2.5 +
-                  (payload.passengerSatisfactionPct / 100) * 1.5 +
-                  (payload.airframeHealth / 100) * 1.0
-              )
-            ).toFixed(1)
-          );
+      const totalCashEarned = Math.max(
+        100,
+        baseFlightReward +
+          luggageBonus +
+          ticketAccuracyBonus +
+          hazardousCargoBonus +
+          mealServiceBonus +
+          cleanlinessBonus +
+          incidentHandlingBonus -
+          unsecuredPenalty -
+          damagePenalty
+      );
+      const xpEarned = Math.round(totalCashEarned * 0.45);
+      const starRating =
+        payload.outcome === 'CRASHED'
+          ? 1.5
+          : Number(
+              Math.min(
+                5,
+                Math.max(
+                  1,
+                  2.5 +
+                    (payload.passengerSatisfactionPct / 100) * 1.5 +
+                    (payload.airframeHealth / 100) * 1.0
+                )
+              ).toFixed(1)
+            );
 
-    const newAchievements = [...current.unlockedAchievements];
-    const newlyUnlocked: string[] = [];
-    const grantAch = (id: string) => {
-      if (!newAchievements.includes(id)) {
-        newAchievements.push(id);
-        newlyUnlocked.push(id);
+      const newAchievements = [...current.unlockedAchievements];
+      const newlyUnlocked: string[] = [];
+      const grantAch = (id: string) => {
+        if (!newAchievements.includes(id)) {
+          newAchievements.push(id);
+          newlyUnlocked.push(id);
+        }
+      };
+
+      if (payload.outcome !== 'CRASHED') grantAch('ach_first_flight');
+      if (payload.ticketsAccurateCount >= payload.ticketsTotalCount) grantAch('ach_gatekeeper');
+      if (payload.luggageLoadedCount >= payload.luggageTotalCount) grantAch('ach_baggage_pro');
+      if (payload.hazardousCargoIntactCount >= 3 && payload.outcome !== 'CRASHED')
+        grantAch('ach_hazmat_ace');
+      if (payload.cleanlinessPct >= 100) grantAch('ach_spotless');
+      if (payload.outcome !== 'CRASHED' && Math.abs(payload.landingVsFpm) <= 250)
+        grantAch('ach_butter_landing');
+      if (payload.incidentsResolvedCount >= 1) grantAch('ach_crisis_manager');
+
+      const newXp = current.xp + xpEarned;
+      const newLevel = Math.floor(newXp / 1000) + 1;
+      const flightsCompleted = current.flightsCompleted + 1;
+      const avgRating = Number(
+        ((current.avgRating * current.flightsCompleted + starRating) / flightsCompleted).toFixed(1)
+      );
+
+      profile = {
+        ...current,
+        cash: current.cash + totalCashEarned,
+        xp: newXp,
+        level: newLevel,
+        flightsCompleted,
+        avgRating,
+        unlockedAchievements: newAchievements,
+      };
+
+      report = {
+        flightNumber: 'SC-101',
+        routeTitle: 'Metro Chaos Intl → Destination',
+        outcome: payload.outcome,
+        summaryReason:
+          payload.outcome === 'SUCCESS'
+            ? 'Aircraft landed safely on the destination runway and came to a full stop.'
+            : payload.outcome === 'PARTIAL_SUCCESS'
+            ? 'Rough touchdown recorded with minor airframe stress, but all passengers survived!'
+            : 'Hard impact exceeded structural tolerances. Emergency slides deployed.',
+        landingVerticalSpeedFpm: Math.round(payload.landingVsFpm),
+        baseFlightReward,
+        luggageBonus,
+        ticketAccuracyBonus,
+        hazardousCargoBonus,
+        mealServiceBonus,
+        cleanlinessBonus,
+        incidentHandlingBonus,
+        unsecuredPenalty,
+        damagePenalty,
+        totalCashEarned,
+        xpEarned,
+        passengerSatisfactionPct: Math.round(payload.passengerSatisfactionPct),
+        starRating,
+        unlockedAchievements: newlyUnlocked,
+      };
+    }
+
+    await this.saveProfile(profile);
+
+    // Record Debrief Report to Firestore if user is authenticated
+    if (this.currentUser) {
+      const reportId = `rep_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+      const docPath = `flight_reports/${reportId}`;
+      try {
+        await setDoc(doc(db, 'flight_reports', reportId), {
+          reportId,
+          userId: this.currentUser.uid,
+          routeId: payload.routeId,
+          routeName: report.routeTitle.slice(0, 100),
+          passengersServed: 12,
+          passengerRating: report.starRating,
+          cashEarned: report.totalCashEarned,
+          xpEarned: report.xpEarned,
+          hazardsPrevented: payload.incidentsResolvedCount,
+          createdAt: new Date().toISOString(),
+        });
+      } catch (err) {
+        handleFirestoreError(err, OperationType.CREATE, docPath);
       }
-    };
+    }
 
-    if (payload.outcome !== 'CRASHED') grantAch('ach_first_flight');
-    if (payload.ticketsAccurateCount >= payload.ticketsTotalCount) grantAch('ach_gatekeeper');
-    if (payload.luggageLoadedCount >= payload.luggageTotalCount) grantAch('ach_baggage_pro');
-    if (payload.hazardousCargoIntactCount >= 3 && payload.outcome !== 'CRASHED')
-      grantAch('ach_hazmat_ace');
-    if (payload.cleanlinessPct >= 100) grantAch('ach_spotless');
-    if (payload.outcome !== 'CRASHED' && Math.abs(payload.landingVsFpm) <= 250)
-      grantAch('ach_butter_landing');
-    if (payload.incidentsResolvedCount >= 1) grantAch('ach_crisis_manager');
-
-    const newXp = current.xp + xpEarned;
-    const newLevel = Math.floor(newXp / 1000) + 1;
-    const flightsCompleted = current.flightsCompleted + 1;
-    const avgRating = Number(
-      ((current.avgRating * current.flightsCompleted + starRating) / flightsCompleted).toFixed(1)
-    );
-
-    const updatedProfile: PlayerProfile = {
-      ...current,
-      cash: current.cash + totalCashEarned,
-      xp: newXp,
-      level: newLevel,
-      flightsCompleted,
-      avgRating,
-      unlockedAchievements: newAchievements,
-    };
-
-    await this.syncToCloudAndLocal(updatedProfile);
-
-    const report: DebriefReport = {
-      flightNumber: 'SC-101',
-      routeTitle: 'Metro Chaos Intl → Destination',
-      outcome: payload.outcome,
-      summaryReason:
-        payload.outcome === 'SUCCESS'
-          ? 'Aircraft landed safely on the destination runway and came to a full stop.'
-          : payload.outcome === 'PARTIAL_SUCCESS'
-          ? 'Rough touchdown recorded with minor airframe stress, but all passengers survived!'
-          : 'Hard impact exceeded structural tolerances. Emergency slides deployed.',
-      landingVerticalSpeedFpm: Math.round(payload.landingVsFpm),
-      baseFlightReward,
-      luggageBonus,
-      ticketAccuracyBonus,
-      hazardousCargoBonus,
-      mealServiceBonus,
-      cleanlinessBonus,
-      incidentHandlingBonus,
-      unsecuredPenalty,
-      damagePenalty,
-      totalCashEarned,
-      xpEarned,
-      passengerSatisfactionPct: Math.round(payload.passengerSatisfactionPct),
-      starRating,
-      unlockedAchievements: newlyUnlocked,
-    };
-
-    return { profile: updatedProfile, report };
+    return { profile, report };
   }
 
   public async purchaseUpgrade(upgradeId: string, cost: number): Promise<PlayerProfile> {
@@ -274,7 +340,7 @@ class ProgressionService {
       });
       if (res.ok) {
         const updated = (await res.json()) as PlayerProfile;
-        await this.syncToCloudAndLocal(updated);
+        await this.saveProfile(updated);
         return updated;
       }
     } catch {
@@ -290,20 +356,31 @@ class ProgressionService {
       cash: current.cash - cost,
       unlockedUpgrades: [...current.unlockedUpgrades, upgradeId],
     };
-    await this.syncToCloudAndLocal(updated);
+    await this.saveProfile(updated);
     return updated;
   }
 
-  private async syncToCloudAndLocal(profile: PlayerProfile) {
+  private async saveProfile(profile: PlayerProfile) {
     localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(profile));
-    if (this.isFirebaseConfigured && this.db && profile.uid) {
+
+    if (this.currentUser) {
+      const docPath = `pilot_profiles/${this.currentUser.uid}`;
       try {
-        await setDoc(doc(this.db, 'pilot_profiles', profile.uid), {
-          ...profile,
+        await setDoc(doc(db, 'pilot_profiles', this.currentUser.uid), {
+          uid: this.currentUser.uid,
+          callsign: profile.callsign,
+          cash: profile.cash,
+          xp: profile.xp,
+          level: profile.level,
+          flightsCompleted: profile.flightsCompleted,
+          avgRating: profile.avgRating,
+          unlockedUpgrades: profile.unlockedUpgrades,
+          unlockedAchievements: profile.unlockedAchievements,
+          updatedAt: new Date().toISOString(),
           authMode: 'FIREBASE',
         });
-      } catch {
-        // ignore
+      } catch (err) {
+        handleFirestoreError(err, OperationType.WRITE, docPath);
       }
     }
   }

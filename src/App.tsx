@@ -133,6 +133,27 @@ export function App() {
     soundEngine.setMuted(nextMuted);
   };
 
+  const handleGoogleSignIn = async () => {
+    try {
+      const updated = await progressionService.signInGoogle();
+      setProfile(updated);
+      soundEngine.playTaskSuccess();
+    } catch (err) {
+      console.error('Google Sign-In error:', err);
+    }
+  };
+
+  const handleSignOut = async () => {
+    try {
+      await progressionService.signOut();
+      const local = progressionService.getLocalProfile();
+      setProfile(local);
+      soundEngine.playPaChime();
+    } catch (err) {
+      console.error('Sign out error:', err);
+    }
+  };
+
   return (
     <main className="relative h-screen w-screen overflow-hidden bg-slate-950 select-none">
       <div
@@ -189,6 +210,8 @@ export function App() {
             setDebriefReport(null);
             engineRef.current?.resetScenario(currentRoute);
           }}
+          onGoogleSignIn={handleGoogleSignIn}
+          onSignOut={handleSignOut}
         />
       )}
     </main>

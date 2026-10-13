@@ -1,0 +1,70 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Default deny catch-all
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() > 0 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidPilotProfile(data) {
+      return data.keys().hasAll(['uid', 'callsign', 'cash', 'xp', 'level', 'flightsCompleted', 'avgRating']) &&
+        data.keys().hasOnly(['uid', 'callsign', 'cash', 'xp', 'level', 'flightsCompleted', 'avgRating', 'unlockedUpgrades', 'unlockedAchievements', 'updatedAt', 'authMode']) &&
+        data.uid is string && data.uid == request.auth.uid && data.uid.size() <= 128 &&
+        data.callsign is string && data.callsign.size() <= 50 &&
+        data.cash is number && data.cash >= 0 &&
+        data.xp is number && data.xp >= 0 &&
+        data.level is number && data.level >= 1 &&
+        data.flightsCompleted is number && data.flightsCompleted >= 0 &&
+        data.avgRating is number && data.avgRating >= 0 && data.avgRating <= 5.0 &&
+        (!('unlockedUpgrades' in data) || (data.unlockedUpgrades is list && data.unlockedUpgrades.size() <= 50)) &&
+        (!('unlockedAchievements' in data) || (data.unlockedAchievements is list && data.unlockedAchievements.size() <= 50));
+    }
+
+    function isValidFlightReport(data) {
+      return data.keys().hasAll(['reportId', 'userId', 'routeId', 'routeName', 'cashEarned', 'xpEarned']) &&
+        data.keys().hasOnly(['reportId', 'userId', 'routeId', 'routeName', 'passengersServed', 'passengerRating', 'cashEarned', 'xpEarned', 'hazardsPrevented', 'createdAt']) &&
+        data.userId is string && data.userId == request.auth.uid && data.userId.size() <= 128 &&
+        data.reportId is string && data.reportId.size() <= 128 &&
+        data.routeName is string && data.routeName.size() <= 100 &&
+        data.cashEarned is number &&
+        data.xpEarned is number;
+    }
+
+    match /pilot_profiles/{userId} {
+      allow get: if isSignedIn() && isValidId(userId) && request.auth.uid == userId;
+      allow list: if isSignedIn() && resource.data.uid == request.auth.uid;
+      allow create: if isSignedIn() && isValidId(userId) && request.auth.uid == userId && isValidPilotProfile(incoming());
+      allow update: if isSignedIn() && isValidId(userId) && request.auth.uid == userId && isValidPilotProfile(incoming()) && incoming().uid == existing().uid;
+      allow delete: if false;
+    }
+
+    match /flight_reports/{reportId} {
+      allow get: if isSignedIn() && isValidId(reportId) && resource.data.userId == request.auth.uid;
+      allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow create: if isSignedIn() && isValidId(reportId) && incoming().userId == request.auth.uid && isValidFlightReport(incoming());
+      allow update, delete: if false;
+    }
+
+    // Connection testing endpoint
+    match /test/connection {
+      allow read: if true;
+    }
+  }
+}
