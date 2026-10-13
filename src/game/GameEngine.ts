@@ -1455,7 +1455,8 @@ export class GameEngine {
         this.world.luggageCartGroup.rotation.y = this.tugState.yaw;
 
         const doorDist = this.world.luggageCartGroup.position.distanceTo(new THREE.Vector3(-2.2, 0, 10.5));
-        if (doorDist < 4.8) {
+        const beltDist = this.world.baggageConveyorGroup.position.distanceTo(new THREE.Vector3(-2.2, 0, 12.8));
+        if (doorDist < 4.8 && beltDist < 4.5 && !this.telemetry.cargoDoorClosed) {
           this.autoUnloadBaggageCart();
         }
       }
@@ -1638,7 +1639,20 @@ export class GameEngine {
     );
     for (const bag of this.luggage) {
       const m = this.luggageMeshes.get(bag.id);
-      if (m && (bag.state === 'ON_CART' || bag.state === 'LOOSE_CABIN')) {
+      if (!m) continue;
+      if (bag.state === 'ON_CART') {
+        // These meshes are separate from the cart, so keep their world positions attached to its bed.
+        const idx = Math.max(0, Number(bag.id.split('_').pop()) - 1);
+        const localX = (idx % 2) * 0.72 - 0.36;
+        const localZ = Math.floor(idx / 2) * 0.72 - 0.72;
+        const yaw = this.world.luggageCartGroup.rotation.y;
+        const rotatedX = localX * Math.cos(yaw) + localZ * Math.sin(yaw);
+        const rotatedZ = -localX * Math.sin(yaw) + localZ * Math.cos(yaw);
+        bag.position.x = this.world.luggageCartGroup.position.x + rotatedX;
+        bag.position.y = 0.68;
+        bag.position.z = this.world.luggageCartGroup.position.z + rotatedZ;
+        m.position.set(bag.position.x, bag.position.y, bag.position.z);
+      } else if (bag.state === 'LOOSE_CABIN') {
         m.position.set(bag.position.x, bag.position.y, bag.position.z);
       }
     }
