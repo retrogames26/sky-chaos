@@ -72,7 +72,9 @@ class ProgressionService {
     if (this.currentUser) {
       return {
         configured: true,
-        message: `Connected to Cloud Firestore. Logged in as ${this.currentUser.displayName || this.currentUser.email}`,
+        message: this.isConnected
+          ? `Signed in as ${this.currentUser.displayName || this.currentUser.email}. Firestore connection check passed.`
+          : `Signed in as ${this.currentUser.displayName || this.currentUser.email}, but Firestore connectivity could not be confirmed.`,
         userEmail: this.currentUser.email || undefined,
       };
     }
