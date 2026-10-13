@@ -26,7 +26,7 @@ interface ServerPlayerProfile {
 interface RoomPeer {
   playerId: string;
   callsign: string;
-  role: 'PILOT' | 'COPILOT' | 'CABIN_CREW' | 'GROUND_CREW';
+  role: 'PILOT' | 'COPILOT' | 'CABIN_CREW' | 'GROUND_CREW' | 'BAGGAGE_HANDLER' | 'FUEL_OPERATOR';
   mode: 'ON_FOOT' | 'IN_COCKPIT' | 'DRIVING_TUG' | 'DRIVING_FUEL_TRUCK';
   localPosition: { x: number; y: number; z: number };
   yaw: number;
@@ -269,6 +269,15 @@ async function startServer() {
           joinedPlayerId = playerId;
 
           const room = getOrCreateRoom(roomId);
+          // Six-player hard cap, counting live connections only. Do not partially join a full room.
+          if (!room.clients.has(ws) && room.clients.size >= 6) {
+            ws.send(JSON.stringify({
+              type: 'lobby:kicked',
+              reason: 'This room is full (maximum 6 players). Ask the host for another room code.',
+            }));
+            ws.close(1008, 'Room full');
+            return;
+          }
           if (!room.hostPlayerId) {
             room.hostPlayerId = playerId;
           }
@@ -281,6 +290,10 @@ async function startServer() {
               ? 'CABIN_CREW'
               : msg.role === 'GROUND_CREW'
               ? 'GROUND_CREW'
+              : msg.role === 'BAGGAGE_HANDLER'
+              ? 'BAGGAGE_HANDLER'
+              : msg.role === 'FUEL_OPERATOR'
+              ? 'FUEL_OPERATOR'
               : 'PILOT';
 
           const initialPeer: RoomPeer = {

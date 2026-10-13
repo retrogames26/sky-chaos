@@ -368,15 +368,15 @@ export class PhysicsWorld {
       // Rotation & Takeoff criteria:
       // Can rotate when airspeed reaches Vr (~95-105 kts), or with flaps at ~85 kts.
       // Lift factor based on speed & pitch angle
-      const rotationLift = Math.sin(THREE.MathUtils.degToRad(telemetry.pitchDeg)) * 1.5;
+      const rotationLift = Math.sin(THREE.MathUtils.degToRad(telemetry.pitchDeg)) * 1.8;
       const baseLiftRatio = (effectiveSpeed / 108) * (effectiveSpeed / 108);
       const totalLiftForce = baseLiftRatio * (1.0 + rotationLift) * groundEffect;
 
-      if (effectiveSpeed >= 88 && (telemetry.pitchDeg >= 2.0 || effectiveSpeed >= 120) && totalLiftForce >= 0.92) {
+      if (effectiveSpeed >= (telemetry.flapsDeg > 0 ? 76 : 88) && telemetry.pitchDeg >= 3.0 && totalLiftForce >= 0.72) {
         // LIFTOFF! Wheels unstick from runway
         telemetry.onGround = false;
         this.airborneTime = 0.1;
-        verticalMetersPerSec = Math.max(2.5, Math.sin(THREE.MathUtils.degToRad(Math.max(3, telemetry.pitchDeg))) * (telemetry.airspeedKts * 0.32));
+        verticalMetersPerSec = Math.max(3.0, Math.sin(THREE.MathUtils.degToRad(Math.max(4, telemetry.pitchDeg))) * (telemetry.airspeedKts * 0.38));
       } else {
         verticalMetersPerSec = 0;
         aircraftGroup.position.y = 0;
@@ -384,8 +384,8 @@ export class PhysicsWorld {
     } else {
       // Airborne lift and gravity calculation
       const liftFactor = Math.min(1.4, Math.pow(effectiveSpeed / 112, 2)) * groundEffect;
-      const climbFromPitch = Math.sin(THREE.MathUtils.degToRad(telemetry.pitchDeg)) * (telemetry.airspeedKts * 0.28);
-      const stallSink = liftFactor < 0.75 ? (0.75 - liftFactor) * 26.0 : 0;
+      const climbFromPitch = Math.sin(THREE.MathUtils.degToRad(telemetry.pitchDeg)) * (telemetry.airspeedKts * 0.34);
+      const stallSink = liftFactor < 0.58 ? (0.58 - liftFactor) * 18.0 : 0;
       const bankSink = (1 - Math.cos(THREE.MathUtils.degToRad(telemetry.rollDeg))) * 7.5;
 
       verticalMetersPerSec = climbFromPitch * liftFactor - stallSink - bankSink;
@@ -406,7 +406,7 @@ export class PhysicsWorld {
 
     // CRITICAL: Only trigger touchdown if we have been airborne and are descending onto ground level!
     if (!telemetry.onGround) {
-      if (aircraftGroup.position.y <= 0.0 && this.airborneTime > 0.6) {
+      if (aircraftGroup.position.y <= 0.0 && this.airborneTime > 0.6 && verticalMetersPerSec < -0.5) {
         // Touchdown on runway!
         aircraftGroup.position.y = 0;
         telemetry.onGround = true;
@@ -423,8 +423,8 @@ export class PhysicsWorld {
           telemetry.airframeHealth = Math.max(0, telemetry.airframeHealth - 25);
         }
         touchdownEvent = { verticalSpeedFpm: impactFpm, hardLanding: isHard };
-      } else if (aircraftGroup.position.y < 0.0) {
-        // Enforce ground plane while climbing or near threshold
+      } else if (aircraftGroup.position.y < 0.0 && this.airborneTime < 0.6) {
+        // Brief runway transition guard only; never snap an established flight back to the ground.
         aircraftGroup.position.y = 0;
       }
     } else {

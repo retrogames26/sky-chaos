@@ -755,6 +755,11 @@ export class GameEngine {
         break;
       }
 
+      case 'CARGO_DOOR': {
+        this.toggleCargoDoor();
+        break;
+      }
+
       case 'PILOT_SEAT': {
         this.enterPilotSeat();
         break;
@@ -902,7 +907,6 @@ export class GameEngine {
 
   public toggleCabinDoor(fromRemote = false) {
     this.telemetry.cabinDoorClosed = !this.telemetry.cabinDoorClosed;
-    this.telemetry.cargoDoorClosed = this.telemetry.cabinDoorClosed;
     soundEngine.playDoorLatch(this.telemetry.cabinDoorClosed);
 
     if (this.telemetry.cabinDoorClosed) {
@@ -910,15 +914,32 @@ export class GameEngine {
         this.player.localPos.set(-1.1, 1.65, -9.5);
         this.player.insideCabin = true;
       }
-      this.triggerToast('Cabin & Cargo Doors CLOSED and ARMED for departure.', 'success');
+      this.triggerToast('Passenger door closed. Check the separate cargo door before departure.', 'success');
     } else {
-      this.triggerToast('Cabin Door OPENED. Boarding stairs deployed.', 'info');
+      this.triggerToast('Passenger door opened. Boarding stairs deployed.', 'info');
     }
 
     if (!fromRemote) {
       multiplayerClient.sendGameAction('door:set', undefined, {
         closed: this.telemetry.cabinDoorClosed,
       });
+    }
+    this.emitUIState();
+  }
+
+  public toggleCargoDoor(fromRemote = false) {
+    if (this.telemetry.enginesRunning && this.telemetry.onGround === false) {
+      this.triggerToast('Cargo door locked while airborne.', 'warning');
+      return;
+    }
+    this.telemetry.cargoDoorClosed = !this.telemetry.cargoDoorClosed;
+    soundEngine.playDoorLatch(this.telemetry.cargoDoorClosed);
+    this.triggerToast(
+      this.telemetry.cargoDoorClosed ? 'Rear cargo door closed and secured.' : 'Rear cargo door open. Align the belt loader to transfer baggage.',
+      this.telemetry.cargoDoorClosed ? 'success' : 'info'
+    );
+    if (!fromRemote) {
+      multiplayerClient.sendGameAction('cargo-door:set', undefined, { closed: this.telemetry.cargoDoorClosed });
     }
     this.emitUIState();
   }
@@ -1773,16 +1794,15 @@ export class GameEngine {
         return;
       }
 
-      // COCKPIT FIRST PERSON
-      const localEye = new THREE.Vector3(-0.55, 2.76, -15.18);
+      // PILOT COCKPIT: eye point is in aircraft-local coordinates, just behind the windscreen.
+      // The old camera multiplied the aircraft rotation by the on-foot yaw/pitch, which could
+      // double-rotate the view and aim through the fuselage.
+      const localEye = new THREE.Vector3(0, 3.12, -16.05);
       const worldEye = localEye.applyMatrix4(this.aircraft.root.matrixWorld);
       this.camera.position.copy(worldEye);
-
-      const lookQuat = new THREE.Quaternion().setFromEuler(
-        new THREE.Euler(this.player.pitch, this.player.yaw, 0, 'YXZ')
-      );
-      const shipQuat = new THREE.Quaternion().setFromEuler(this.aircraft.root.rotation);
-      this.camera.quaternion.copy(shipQuat).multiply(lookQuat);
+      this.camera.quaternion.copy(this.aircraft.root.quaternion);
+      this.camera.rotateY(this.player.yaw * 0.35);
+      this.camera.rotateX(this.player.pitch * 0.35);
       return;
     }
 
@@ -1897,6 +1917,11 @@ export class GameEngine {
       const data = payload as { closed: boolean };
       if (this.telemetry.cabinDoorClosed !== data.closed) {
         this.toggleCabinDoor(true);
+      }
+    } else if (action === 'cargo-door:set') {
+      const data = payload as { closed: boolean };
+      if (this.telemetry.cargoDoorClosed !== data.closed) {
+        this.toggleCargoDoor(true);
       }
     } else if (action === 'mess:cleaned' && refId) {
       this.cleanCabinMess(refId, true);
