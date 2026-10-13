@@ -130,13 +130,27 @@ class MultiplayerClient {
     this.callsign = callsign;
     this.role = role;
 
-    if (this.ws) {
+    // Cancel any pending reconnect before replacing the active socket.
+    if (this.reconnectTimer !== null && typeof window !== 'undefined') {
+      window.clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+
+    const previousSocket = this.ws;
+    this.ws = null;
+    this.connected = false;
+    if (previousSocket) {
+      // Detach lifecycle handlers so a deliberate room switch cannot schedule
+      // a stale reconnect or mark the replacement connection as disconnected.
+      previousSocket.onopen = null;
+      previousSocket.onmessage = null;
+      previousSocket.onclose = null;
+      previousSocket.onerror = null;
       try {
-        this.ws.close();
+        previousSocket.close();
       } catch {
-        // ignore
+        // Ignore errors while disposing an old socket.
       }
-      this.ws = null;
     }
 
     if (typeof window === 'undefined') return;
@@ -149,6 +163,10 @@ class MultiplayerClient {
       this.ws = socket;
 
       socket.onopen = () => {
+        if (socket !== this.ws) {
+          socket.close();
+          return;
+        }
         this.connected = true;
         this.sendRaw({
           type: 'room:join',
@@ -160,6 +178,7 @@ class MultiplayerClient {
       };
 
       socket.onmessage = (event) => {
+        if (socket !== this.ws) return;
         try {
           const data = JSON.parse(event.data) as MultiplayerMessage;
           this.emitLocal(data);
@@ -169,17 +188,22 @@ class MultiplayerClient {
       };
 
       socket.onclose = () => {
+        // Only the currently active socket may change connection state or
+        // schedule a retry. Older sockets can close after a room switch.
+        if (socket !== this.ws) return;
         this.connected = false;
-        if (this.reconnectTimer) window.clearTimeout(this.reconnectTimer);
+        this.ws = null;
+        if (this.reconnectTimer !== null) window.clearTimeout(this.reconnectTimer);
         this.reconnectTimer = window.setTimeout(() => {
-          if (!this.connected) {
+          this.reconnectTimer = null;
+          if (!this.connected && !this.ws) {
             this.connect(this.roomId, this.callsign, this.role);
           }
         }, 3500);
       };
 
       socket.onerror = () => {
-        this.connected = false;
+        if (socket === this.ws) this.connected = false;
       };
     } catch {
       this.connected = false;
