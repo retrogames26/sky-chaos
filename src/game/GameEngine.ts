@@ -301,7 +301,25 @@ export class GameEngine {
 
   private rebuildScenarioMeshes() {
     while (this.entityGroup.children.length > 0) {
-      this.entityGroup.remove(this.entityGroup.children[0]);
+      const child = this.entityGroup.children[0];
+      child.traverse((object) => {
+        const mesh = object as THREE.Mesh;
+        if (mesh.geometry && typeof mesh.geometry.dispose === 'function') {
+          mesh.geometry.dispose();
+        }
+        const materials = Array.isArray(mesh.material)
+          ? mesh.material
+          : mesh.material
+          ? [mesh.material]
+          : [];
+        for (const material of materials) {
+          for (const value of Object.values(material)) {
+            if (value instanceof THREE.Texture) value.dispose();
+          }
+          material.dispose();
+        }
+      });
+      this.entityGroup.remove(child);
     }
     this.passengerMeshes.clear();
     this.luggageMeshes.clear();
