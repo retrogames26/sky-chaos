@@ -224,6 +224,21 @@ export function buildAirportAndFlightWorld(): WorldObjects {
   fuelHoseReel.rotation.z = Math.PI / 2;
   fuelHoseReel.position.set(-1.15, 1.4, -0.4);
   fuelTruck.add(fuelHoseReel);
+  const fuelHoseMat = new THREE.MeshStandardMaterial({ color: 0x111827, roughness: 0.85 });
+  const fuelHoseCurve = new THREE.CatmullRomCurve3([
+    new THREE.Vector3(-1.15, 1.4, -0.4),
+    new THREE.Vector3(-1.65, 1.1, -0.05),
+    new THREE.Vector3(-1.9, 0.55, 0.35),
+    new THREE.Vector3(-1.85, 0.22, 0.8),
+  ]);
+  const fuelHose = new THREE.Mesh(new THREE.TubeGeometry(fuelHoseCurve, 16, 0.065, 8, false), fuelHoseMat);
+  fuelTruck.add(fuelHose);
+  const fuelNozzle = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.28, 0.12), darkMetal);
+  fuelNozzle.position.set(-1.85, 0.2, 0.82);
+  fuelTruck.add(fuelNozzle);
+  const nozzleGrip = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.12, 0.2), amberAccent);
+  nozzleGrip.position.set(-1.85, 0.28, 0.82);
+  fuelTruck.add(nozzleGrip);
 
   for (const fx of [-1.15, 1.15]) {
     for (const fz of [-2.6, 0.4, 2.4]) {
@@ -382,7 +397,8 @@ export function buildAirportAndFlightWorld(): WorldObjects {
   // The belt is a separate world object so the game can animate/position it independently.
   const baggageConveyorGroup = new THREE.Group();
   baggageConveyorGroup.name = 'BaggageConveyor';
-  baggageConveyorGroup.position.set(12, 0, -18);
+  baggageConveyorGroup.position.set(1.7, 0, 12.8);
+  baggageConveyorGroup.rotation.y = -Math.PI / 2;
   const beltFrameMat = new THREE.MeshStandardMaterial({ color: 0x475569, metalness: 0.65, roughness: 0.42 });
   const beltMat = new THREE.MeshStandardMaterial({ color: 0x1f2937, metalness: 0.15, roughness: 0.8 });
   const railMat = new THREE.MeshStandardMaterial({ color: 0xf59e0b, metalness: 0.25, roughness: 0.5 });
