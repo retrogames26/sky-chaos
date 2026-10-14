@@ -84,6 +84,53 @@ export function App() {
     };
   }, []);
 
+  // Let E close any open in-game overlay before the game engine handles
+  // E as an interaction key. Capture phase prevents accidental interaction
+  // with passengers, vehicles, or cockpit controls while a popup is open.
+  useEffect(() => {
+    const handleClosePopupKey = (event: KeyboardEvent) => {
+      if (event.code !== 'KeyE' || event.repeat) return;
+
+      const target = event.target as HTMLElement | null;
+      if (
+        target?.tagName === 'INPUT' ||
+        target?.tagName === 'TEXTAREA' ||
+        target?.tagName === 'SELECT' ||
+        target?.isContentEditable
+      ) {
+        return;
+      }
+
+      const gameOverlayOpen =
+        activeModal !== 'NONE' ||
+        Boolean(debriefReport) ||
+        Boolean(
+          uiSnapshot &&
+            (uiSnapshot.inspectingPassenger ||
+              uiSnapshot.showManifestModal ||
+              uiSnapshot.showAnnouncementMenu ||
+              uiSnapshot.showGalleyMenu ||
+              uiSnapshot.showControlsDrawer)
+        );
+
+      if (!gameOverlayOpen) return;
+
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+
+      setActiveModal('NONE');
+      engineRef.current?.closeModals();
+      if (debriefReport) {
+        setDebriefReport(null);
+        engineRef.current?.resetScenario(currentRoute);
+      }
+    };
+
+    window.addEventListener('keydown', handleClosePopupKey, true);
+    return () => window.removeEventListener('keydown', handleClosePopupKey, true);
+  }, [activeModal, debriefReport, uiSnapshot, currentRoute]);
+
   const handleOpenModal = (
     modal: 'MANIFEST' | 'ANNOUNCEMENT' | 'GALLEY' | 'BRIEFING' | 'PAUSE' | 'MULTIPLAYER'
   ) => {
