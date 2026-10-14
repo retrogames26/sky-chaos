@@ -2258,6 +2258,7 @@ export class GameEngine {
     this.showManifestModal = false;
     this.showAnnouncementMenu = false;
     this.showGalleyMenu = false;
+    this.showControlsDrawer = false;
     this.emitUIState();
   }
 
